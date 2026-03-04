@@ -11,8 +11,8 @@ set -e  # Exit on error
 
 # --- Configuración (Placeholders de Repositorios) ---
 INSTALL_DIR="/opt/aegis"
-REPO_ANK="https://github.com/placeholder/aegis-ank.git"
-REPO_SHELL="https://github.com/placeholder/aegis-shell.git"
+REPO_ANK="https://github.com/Gustavo324234/Aegis-ANK.git"
+REPO_SHELL="https://github.com/Gustavo324234/Aegis-Shell.git"
 NODE_VERSION="20"
 
 # --- Colores para Output ---
