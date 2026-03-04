@@ -100,7 +100,9 @@ cd $INSTALL_DIR/aegis-shell/bff
 echo "Configurando entorno virtual de Python..."
 python3 -m venv venv
 source venv/bin/activate
-pip install --upgrade pip setuptools wheel
+pip install --upgrade pip
+# Forzamos la instalación de las herramientas de compilación legacy
+pip install setuptools wheel packaging
 pip install -r requirements.txt
 deactivate
 
