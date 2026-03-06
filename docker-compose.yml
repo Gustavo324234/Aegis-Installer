@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  ank-server:
+    build:
+      context: ../Aegis-ANK
+      dockerfile: Dockerfile
+    container_name: aegis-ank
+    restart: unless-stopped
+    # Habilitamos el soporte para aceleración de decodificación y LLMs vía NVIDIA
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    environment:
+      - RUST_LOG=info
+      - AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:-default_root_key}
+      - AEGIS_WHISPER_MODEL=${AEGIS_WHISPER_MODEL:-ggml-base.bin}
+    volumes:
+      - ./users:/app/users
+      - ./models:/app/models
+    networks:
+      - aegis_net
+    expose:
+      - "50051"
+
+  aegis-shell:
+    build:
+      context: ../Aegis-Shell
+      dockerfile: Dockerfile
+    container_name: aegis-shell
+    restart: unless-stopped
+    environment:
+      - ANK_TARGET=ank-server:50051
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ank-server
+    networks:
+      - aegis_net
+
+networks:
+  aegis_net:
+    driver: bridge
