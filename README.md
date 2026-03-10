@@ -41,28 +41,53 @@ graph TD
     class LLM,ASR,WASM local
 ```
 
-## 🚀 Quickstart (Day-1 Experience)
+## 🚀 Quickstart: One-Line Deploy (SRE Grade)
 
-Para levantar el ecosistema completo con tolerancia a fallos, asilamiento y red privada, sigue estas 3 directivas SRE:
+El despliegue de Aegis OS es ahora totalmente automatizado. Puedes instalar dependencias, clonar el ecosistema completo y configurar el orquestador con un solo comando:
 
-**1. Despliega la Flota:**
 ```bash
-git clone https://github.com/Aegis-OS/Aegis-Installer.git
-cd Aegis-Installer
-# Renombra .env.example a .env y ajusta tus variables si es necesario
-docker-compose up -d --build
+curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh | sudo bash
 ```
-> **Nota:** Si tu máquina soporta aceleración NVIDIA, el stack consumirá automáticamente tu GPU para Llama.cpp / Whisper.cpp.
 
-**2. Forja al Primer Operador (Terminal del Kernel):**
-Accede directamente a la terminal administrativa para evadir el Frontend e inyectar un usuario nuevo usando nuestra herramienta de Ring 0:
+### 🛡️ Configuración de Seguridad (Guardia .env)
+
+Por diseño de seguridad (**Protocolo Citadel**), el orquestador se detendrá si no detecta tus credenciales maestras. Sigue estos pasos para completar el despliegue:
+
+1. **Obtén tu .env:** Tras el primer intento fallido de despliegue (o tras clonar), navega al directorio del instalador:
+   ```bash
+   cd /opt/aegis/Aegis-Installer
+   cp .env.example .env
+   ```
+2. **Configura tus llaves:** Edita el archivo `.env` y define una `AEGIS_ROOT_KEY` robusta. Esta llave es el ancla criptográfica de todo el sistema.
+3. **Relanza el despliegue:** Vuelve a ejecutar el comando inicial o usa el script local:
+   ```bash
+   sudo ./install_aegis.sh
+   ```
+
+### ✅ Validación del Nexo
+
+Una vez que el script confirme el despliegue, verifica la salud del sistema:
+
+```bash
+# Verificar túnel BFF online
+curl -s http://localhost:8000/health
+
+# Verificar estado operacional del Kernel (ANK)
+curl -s http://localhost:8000/api/system/state
+```
+
+---
+
+## 🛠️ Administración del Enclave
+Accede directamente a la terminal administrativa para gestionar usuarios (tenants) vía Ring 0:
+
 ```bash
 docker exec -it aegis-ank aegis admin create-tenant MiUsuario
 ```
+
 Guarda el Payload seguro que te imprimirá la consola (Contiene el `Tenant ID`, el `Puerto asignado` y el `Temporal Passphrase`).
 
-**3. Accede a tu Enclave (Shell):**
-Dirígete a tu navegador:
+Dirígete a tu navegador para entrar a la Shell:
 👉 [http://localhost:8000](http://localhost:8000)
 
 Ingresa usando el **Tenant ID** y tu **Passphrase**. El Ecosistema despertará.

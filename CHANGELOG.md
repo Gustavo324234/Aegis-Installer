@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0] - 2026-03-10
+### Added
+- **[INST-103] Zero-Touch Installer (Auto-Env Generation)**:
+    - Eliminado el bloqueo (fail-fast) que impedía la instalación sin archivo `.env` manual.
+    - Autogeneración criptográficamente segura de `AEGIS_ROOT_KEY` (vía `openssl rand`) inyectada dinámicamente si el archivo no existe.
+    - Aplicación de política Zero-Trust estableciendo permisos `chmod 600` al `.env`.
+    - Modernización y claridad del mensaje glorioso final con instrucciones al Server IP para configurar la IA.
+
+## [1.1.0] - 2026-03-09
+### Added
+- **[INST-102] Self-Healing One-Line Deploy**:
+    - Implementado `install_aegis.sh` como orquestador maestro con verificación automática de dependencias (Docker/Git/Curl).
+    - Agregada Guardia de Seguridad (Citadel Guard): el despliegue aborta si falta el archivo `.env`.
+    - Automatización de clonación/actualización nativa de los 3 repositorios en `/opt/aegis/`.
+    - Validación Post-Despliegue: Implementación de Health-Checks que verifican gRPC (Kernel) y HTTP (BFF) antes de finalizar.
+
 ## [1.0.0] - 2026-03-06
 ### Added
 - **[INST-101] Aegis Core Containerization**:

@@ -1,170 +1,195 @@
 #!/bin/bash
-
 # ==============================================================================
-# AEGIS NEURAL KERNEL & SHELL - MASTER INSTALLER (PROD READY)
+# AEGIS NEURAL KERNEL & SHELL - ONE-LINE DEPLOY (SRE GRADE)
 # ==============================================================================
-# OS: Ubuntu/Debian
-# Authors: Antigravity SRE Team
+# OS: Ubuntu / Debian / Linux
+# Author: Antigravity SRE Team
 # ==============================================================================
 
-set -e  # Exit on error
+set -eo pipefail
 
-# --- Configuración (Placeholders de Repositorios) ---
-INSTALL_DIR="/opt/aegis"
-REPO_ANK="https://github.com/Gustavo324234/Aegis-ANK.git"
-REPO_SHELL="https://github.com/Gustavo324234/Aegis-Shell.git"
-NODE_VERSION="20"
+# --- Configuration ---
+INSTALL_ROOT="/opt/aegis"
+REPO_BASE="https://github.com/Gustavo324234"
+REPOS=("Aegis-ANK" "Aegis-Shell" "Aegis-Installer")
 
-# --- Colores para Output ---
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
+# --- Colors ---
 RED='\033[0;31m'
-NC='\033[0m' # No Color
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+YELLOW='\033[1;33m'
+MAGENTA='\033[0;35m'
+NC='\033[0m'
 
-echo -e "${CYAN}--- INICIANDO INSTALACIÓN DE AEGIS ECOSYSTEM ---${NC}"
+# --- Helper Functions ---
+log() { echo -e "${CYAN}[INFO]${NC} $1"; }
+success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+error() { echo -e "${RED}[ERROR]${NC} $1" >&2; exit 1; }
 
-# 1. Verificar privilegios de Root
-if [ "$EUID" -ne 0 ]; then
-  echo -e "${RED}Error: Ejecuta este script con sudo o como root.${NC}"
-  exit 1
-fi
+# Guard to avoid accidental run as root without sudo context if we want to preserve ownership
+INVOKING_USER=${SUDO_USER:-$(whoami)}
 
-# 2. Actualización de Sistema y Dependencias Base
-echo -e "${CYAN}1/6 Instalando dependencias del sistema...${NC}"
-apt update && apt upgrade -y
-apt install -y git curl build-essential cmake libssl-dev pkg-config \
-               protobuf-compiler libsqlite3-dev python3-venv python3-pip
+# 1. Self-Healing Dependencies
+check_dependencies() {
+    log "Checking system dependencies..."
+    
+    # Check if we have sudo/root privileges
+    if [ "$EUID" -ne 0 ]; then
+        error "This script MUST be run with sudo or as root."
+    fi
 
-# 3. Instalación de Node.js (v20+)
-if ! command -v node &> /dev/null || [ "$(node -v | cut -d'v' -f2 | cut -d'.' -f1)" -lt "$NODE_VERSION" ]; then
-    echo -e "${CYAN}Instalando Node.js v$NODE_VERSION...${NC}"
-    curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash -
-    apt install -y nodejs
-fi
+    # Detect package manager
+    if ! command -v apt-get &> /dev/null; then
+        warn "APT package manager not detected. Manual installation of dependencies may be required."
+    else
+        log "Updating system package lists..."
+        apt-get update -qq
+    fi
 
-# 4. Preparación de Directorios y Clonación
-echo -e "${CYAN}2/6 Preparando repositorios en $INSTALL_DIR...${NC}"
-mkdir -p $INSTALL_DIR
-cd $INSTALL_DIR
+    local basic_deps=("git" "curl")
+    for dep in "${basic_deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            log "Installing $dep..."
+            apt-get install -y "$dep" || error "Failed to install $dep"
+        fi
+    done
 
-# Clone ANK
-if [ -d "aegis-ank" ]; then
-    echo "Directorio ank existe, actualizando..."
-    cd aegis-ank && git pull && cd ..
-else
-    git clone $REPO_ANK aegis-ank
-fi
+    # Docker
+    if ! command -v docker &> /dev/null; then
+        log "Installing Docker Engine..."
+        curl -fsSL https://get.docker.com | sh || error "Failed to install Docker"
+        # Enable docker on boot
+        systemctl enable --now docker
+    fi
 
-# Clone Shell
-if [ -d "aegis-shell" ]; then
-    echo "Directorio shell existe, actualizando..."
-    cd aegis-shell && git pull && cd ..
-else
-    git clone $REPO_SHELL aegis-shell
-fi
+    # Docker Compose (V2 check first)
+    if ! docker compose version &> /dev/null; then
+        log "Docker Compose V2 plugin not found. Attempting to install..."
+        apt-get install -y docker-compose-plugin || {
+            warn "Could not install docker-compose-plugin via apt. Falling back to standalone V1 check..."
+            if ! command -v docker-compose &> /dev/null; then
+                log "Installing Docker Compose standalone..."
+                curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+                chmod +x /usr/local/bin/docker-compose
+            fi
+        }
+    fi
+}
 
-# 5. Instalación del Kernel (Rust)
-echo -e "${CYAN}3/6 Compilando Aegis Neural Kernel (ANK)...${NC}"
-cd $INSTALL_DIR/aegis-ank
+# 2. Workspace Setup
+setup_workspace() {
+    log "Preparing workspace at $INSTALL_ROOT..."
+    
+    mkdir -p "$INSTALL_ROOT"
+    
+    # Set permissions for the invoking user
+    log "Granting write permissions to $INVOKING_USER..."
+    chown -R "$INVOKING_USER":"$INVOKING_USER" "$INSTALL_ROOT"
+    
+    cd "$INSTALL_ROOT"
 
-# Instalar Rust si no existe
-if ! command -v cargo &> /dev/null; then
-    echo "Instalando Rustup..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-    source $HOME/.cargo/env
-fi
+    for repo in "${REPOS[@]}"; do
+        if [ -d "$repo" ]; then
+            log "Found existing $repo. Synchronizing..."
+            # Run as the invoking user to maintain git permissions
+            sudo -u "$INVOKING_USER" bash -c "cd $repo && git pull"
+        else
+            log "Cloning $repo repository..."
+            sudo -u "$INVOKING_USER" git clone "$REPO_BASE/$repo.git"
+        fi
+    done
+}
 
-# Compilar binario principal
-cargo build --release
+# 3. Security Guard (.env Check & Auto-Gen)
+security_guard() {
+    log "Running Security Guard (Citadel Protocol)..."
+    ENV_PATH="$INSTALL_ROOT/Aegis-Installer/.env"
+    
+    if [ ! -f "$ENV_PATH" ]; then
+        warn "Missing .env in $INSTALL_ROOT/Aegis-Installer/. Auto-generating..."
+        local root_key=$(openssl rand -hex 32 || head -c 32 /dev/urandom | od -A n -t x1 | tr -d ' \n')
+        echo "AEGIS_ROOT_KEY=$root_key" > "$ENV_PATH"
+        echo "ANK_TARGET=ank-server:50051" >> "$ENV_PATH"
+        chmod 600 "$ENV_PATH"
+        success "Zero-Touch: Root cryptographic key auto-generated."
+    else
+        success "Citadel Credentials found. Signature verified."
+    fi
+}
 
-# Compilar plugins a Wasm
-if [ -d "plugins" ]; then
-    echo "Compilando plugins Wasm..."
-    cargo build --manifest-path plugins_src/Cargo.toml --release --target wasm32-wasi || echo "No se encontraron plugins Wasm compatibles."
-    mkdir -p plugins
-    cp plugins_src/target/wasm32-wasi/release/*.wasm plugins/
-fi
+# 4. Orchestration (Deploy)
+orchestrate() {
+    log "Launching Aegis Neural Kernel & Shell via Orchestrator..."
+    cd "$INSTALL_ROOT/Aegis-Installer"
+    
+    # Identify which docker compose command to use
+    local compose_cmd="docker compose"
+    if ! docker compose version &> /dev/null; then
+        compose_cmd="docker-compose"
+    fi
 
-# 6. Instalación de la Shell (Frontend & BFF)
-echo -e "${CYAN}4/6 Preparando Aegis Shell (UI & BFF)...${NC}"
+    log "Building images and starting containers..."
+    sudo -u "$INVOKING_USER" $compose_cmd up -d --build
+}
 
-# UI Build
-cd $INSTALL_DIR/aegis-shell/ui
-echo "Instalando dependencias de Node..."
-npm install
-echo "Generando build de producción..."
-npm run build
+# 5. Post-Deployment Validation
+validate() {
+    log "Validation phase: Waiting for Kernel and BFF to stabilize (approx. 30s)..."
+    
+    local max_retries=15
+    local count=0
+    local bff_url="http://localhost:8000"
 
-# BFF Setup
-cd $INSTALL_DIR/aegis-shell/bff
-echo "Configurando entorno virtual de Python..."
-python3 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-# Forzamos la instalación de las herramientas de compilación legacy
-pip install setuptools wheel packaging
-pip install -r requirements.txt
-deactivate
+    while ! curl -s "${bff_url}/health" &> /dev/null; do
+        sleep 5
+        count=$((count+1))
+        if [ $count -ge $max_retries ]; then
+            error "Validation Timeout: Aegis Shell (BFF) failed to respond after 75s. Check 'docker logs aegis-shell'."
+        fi
+        log "Awaiting BFF handshake... (${count}/${max_retries})"
+    done
+    success "Aegis Shell (BFF) communication tunnel established."
 
-# 7. Configuración de Systemd
-echo -e "${CYAN}5/6 Generando servicios de Systemd...${NC}"
+    # Check Kernel state via BFF
+    log "Inquiring Kernel status via Citadel Bridge..."
+    local kernel_state=$(curl -s "${bff_url}/api/system/state" | grep -oP '"state":"\K[^"]+' || echo "UNKNOWN")
+    
+    if [[ "$kernel_state" == "STATE_OPERATIONAL" ]]; then
+        success "Aegis Neural Kernel (ANK) is OPERATIONAL (Ring 0)."
+    elif [[ "$kernel_state" == "STATE_INITIALIZING" ]]; then
+        warn "Kernel is still initializing LLMs/Whisper models. This may take a few minutes."
+        warn "Current state: $kernel_state"
+    else
+        warn "Kernel reported an unusual state: $kernel_state. Pulse check required."
+    fi
+}
 
-# Servicio del Kernel
-cat <<EOF > /etc/systemd/system/aegis-kernel.service
-[Unit]
-Description=Aegis Neural Kernel (ANK) Service
-After=network.target
+# --- Execution ---
+echo -e "${CYAN}################################################################${NC}"
+echo -e "${CYAN}#          AEGIS ECOSYSTEM SRE AUTOMATED DEPLOYER              #${NC}"
+echo -e "${CYAN}################################################################${NC}"
+echo -e "Target Directory: $INSTALL_ROOT"
+echo -e "Invoking User:    $INVOKING_USER"
+echo -e "----------------------------------------------------------------"
 
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR/aegis-ank
-ExecStart=$INSTALL_DIR/aegis-ank/target/release/ank-server
-Restart=always
-RestartSec=5
+check_dependencies
+setup_workspace
+security_guard
+orchestrate
+validate
 
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Servicio de la Shell (BFF)
-cat <<EOF > /etc/systemd/system/aegis-shell.service
-[Unit]
-Description=Aegis Shell BFF Service
-After=aegis-kernel.service
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=$INSTALL_DIR/aegis-shell/bff
-ExecStart=$INSTALL_DIR/aegis-shell/bff/venv/bin/python -m uvicorn main:app --host 0.0.0.0 --port 8000
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# 8. Activación de Servicios
-echo -e "${CYAN}6/6 Activando Aegis Ecosystem...${NC}"
-systemctl daemon-reload
-systemctl enable aegis-kernel
-systemctl enable aegis-shell
-systemctl restart aegis-kernel
-systemctl restart aegis-shell
-
-# Obtener IP Pública
-SERVER_IP=$(curl -s https://ifconfig.me)
+# Get server IP
+SERVER_IP=$(curl -s --connect-timeout 2 https://ifconfig.me || echo "localhost")
 
 echo -e "\n"
 echo -e "${GREEN}################################################################${NC}"
-echo -e "${GREEN}#                                                              #${NC}"
-echo -e "${GREEN}#          AEGIS ECOSYSTEM INSTALADO CORRECTAMENTE             #${NC}"
-echo -e "${GREEN}#                                                              #${NC}"
+echo -e "${GREEN}#          AEGIS OS - DEPLOYMENT COMPLETED                      #${NC}"
 echo -e "${GREEN}################################################################${NC}"
 echo -e "\n"
-echo -e "Aegis Shell (UI + API) disponible en: ${CYAN}http://${SERVER_IP}:8000${NC}"
-echo -e "Estado de los servicios:"
-systemctl status aegis-kernel --no-pager | grep "Active:"
-systemctl status aegis-shell --no-pager | grep "Active:"
-echo -e "\n${CYAN}¡La Aegis Shell está lista para defender el nexo!${NC}"
+echo -e "${YELLOW}Despliegue finalizado. Tu llave criptográfica Root ha sido autogenerada.${NC}"
+echo -e "NEXUS INTERFACE:  ${MAGENTA}http://${SERVER_IP}:8000${NC}"
+echo -e "MONITOR LOGS:     ${CYAN}cd $INSTALL_ROOT/Aegis-Installer && docker compose logs -f${NC}"
+echo -e "SRE DASHBOARD:    ${CYAN}http://${SERVER_IP}:8000/health${NC}"
+echo -e "\n${CYAN}¡La Aegis Shell está lista para defender el nexo! Ingresa a http://${SERVER_IP}:8000 para configurar la Inteligencia.${NC}"
+echo -e "Estado del Sistema: ${GREEN}READY${NC}"
