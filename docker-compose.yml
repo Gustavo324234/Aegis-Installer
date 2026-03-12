@@ -5,6 +5,8 @@ services:
     build:
       context: ../Aegis-ANK
       dockerfile: Dockerfile
+      args:
+        FEATURES: ${AEGIS_FEATURES:-}
     container_name: aegis-ank
     restart: unless-stopped
     # Habilitamos el soporte para aceleración de decodificación y LLMs vía NVIDIA
@@ -32,6 +34,7 @@ services:
       context: ../Aegis-Shell
       dockerfile: Dockerfile
     container_name: aegis-shell
+    profiles: ["frontend"]
     restart: unless-stopped
     environment:
       - ANK_TARGET=ank-server:50051

@@ -1,4 +1,19 @@
 # Changelog
+ 
+## [1.3.1] - 2026-03-12
+### Fixed
+- **[INST-104] Docker Auto-Healing & GPU Pre-flight**:
+    - Implementado auto-healing de permisos de Docker: detección automática de "Permission Denied" y asignación automática al grupo `docker`.
+    - Agregada validación pre-flight de hardware para el perfil `Monolith` mediante chequeo de `nvidia-smi` y drivers.
+    - Robustecimiento de la orquestación: implementación de fallback a ejecución con privilegios de root si la sesión del usuario no registra los cambios de grupo en tiempo real.
+
+## [1.3.0] - 2026-03-11
+### Added
+- **[ANK-2001] Aegis Bootstrapper (TUI)**:
+    - Transformación del script de instalación en una experiencia interactiva utilizando `whiptail`.
+    - Selección de Perfil de Hardware (Microkernel Cloud vs Monolith Local GPU), inyectando dinámicamente flags de Rust (`--features`).
+    - Selección de Perfil de UI (Aegis Shell Web vs Headless), usando *Docker Compose profiles* (`--profile frontend`).
+    - Auto-generación dinámica de `AEGIS_FEATURES` en `.env`.
 
 ## [1.2.0] - 2026-03-10
 ### Added

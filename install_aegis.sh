@@ -12,6 +12,7 @@ set -eo pipefail
 INSTALL_ROOT="/opt/aegis"
 REPO_BASE="https://github.com/Gustavo324234"
 REPOS=("Aegis-ANK" "Aegis-Shell" "Aegis-Installer")
+FORCE_ROOT_ORCHESTRATION=false
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -47,7 +48,7 @@ check_dependencies() {
         apt-get update -qq
     fi
 
-    local basic_deps=("git" "curl")
+    local basic_deps=("git" "curl" "whiptail")
     for dep in "${basic_deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             log "Installing $dep..."
@@ -101,7 +102,43 @@ setup_workspace() {
     done
 }
 
-# 3. Security Guard (.env Check & Auto-Gen)
+# 3. Interactive Configuration (Aegis Bootstrapper)
+configure_profile() {
+    log "Initiating Aegis Bootstrapper (TUI)..."
+    
+    # Check if we should run interactively
+    if ! command -v whiptail &> /dev/null; then
+        warn "whiptail not found. Falling back to default profiles."
+        HW_PROFILE="1"
+        UI_PROFILE="1"
+    else
+        HW_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Deployment Profile:" 15 65 2 \
+        "1" "Microkernel (Cloud/Edge) - Lightweight" \
+        "2" "Monolith (Local GPU) - Heavy" 3>&1 1>&2 2>&3) || HW_PROFILE="1"
+        
+        UI_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Interface Profile:" 15 65 2 \
+        "1" "Aegis Shell (Web UI)" \
+        "2" "Headless (Kernel Only)" 3>&1 1>&2 2>&3) || UI_PROFILE="1"
+    fi
+
+    if [ "$HW_PROFILE" == "2" ]; then
+        SELECTED_FEATURES="full_local"
+        log "Hardware Profile: Monolith (Local GPU)"
+    else
+        SELECTED_FEATURES=""
+        log "Hardware Profile: Microkernel (Cloud/Edge)"
+    fi
+
+    if [ "$UI_PROFILE" == "2" ]; then
+        SELECTED_UI="headless"
+        log "Interface Profile: Headless (Kernel Only)"
+    else
+        SELECTED_UI="web"
+        log "Interface Profile: Aegis Shell (Web UI)"
+    fi
+}
+
+# 4. Security Guard (.env Check & Auto-Gen)
 security_guard() {
     log "Running Security Guard (Citadel Protocol)..."
     ENV_PATH="$INSTALL_ROOT/Aegis-Installer/.env"
@@ -111,16 +148,74 @@ security_guard() {
         local root_key=$(openssl rand -hex 32 || head -c 32 /dev/urandom | od -A n -t x1 | tr -d ' \n')
         echo "AEGIS_ROOT_KEY=$root_key" > "$ENV_PATH"
         echo "ANK_TARGET=ank-server:50051" >> "$ENV_PATH"
+        echo "AEGIS_FEATURES=$SELECTED_FEATURES" >> "$ENV_PATH"
         chmod 600 "$ENV_PATH"
         success "Zero-Touch: Root cryptographic key auto-generated."
     else
         success "Citadel Credentials found. Signature verified."
+        # Update or append AEGIS_FEATURES
+        if grep -q "^AEGIS_FEATURES=" "$ENV_PATH"; then
+            sed -i "s/^AEGIS_FEATURES=.*/AEGIS_FEATURES=$SELECTED_FEATURES/" "$ENV_PATH"
+        else
+            echo "AEGIS_FEATURES=$SELECTED_FEATURES" >> "$ENV_PATH"
+        fi
     fi
 }
 
-# 4. Orchestration (Deploy)
+# 4.5 Pre-flight Hardening & GPU Validation
+preflight_hardening() {
+    log "Performing Pre-flight Hardening & GPU Validation..."
+
+    # 1. NVIDIA GPU Check
+    if command -v nvidia-smi &> /dev/null; then
+        if nvidia-smi &> /dev/null; then
+            success "NVIDIA GPU detected: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)"
+        else
+            warn "NVIDIA GPU detected but 'nvidia-smi' failed to communicate with the driver."
+            if [ "$HW_PROFILE" == "2" ]; then
+                warn "Hardware is NOT ready for 'Monolith' profile. Check drivers (Nvidia-Container-Toolkit)."
+            fi
+        fi
+    else
+        if [ "$HW_PROFILE" == "2" ]; then
+            warn "CRITICAL: 'nvidia-smi' command not found."
+            warn "Hardware is NOT ready for 'Monolith' profile. Performance will be degraded."
+        else
+            log "NVIDIA command not found. Using CPU/Standard profile."
+        fi
+    fi
+
+    # 2. Docker Auto-Healing
+    log "Testing Docker permissions for user: $INVOKING_USER..."
+    if ! sudo -u "$INVOKING_USER" docker ps &> /dev/null; then
+        warn "Permission denied while connecting to Docker socket as $INVOKING_USER."
+        
+        # Check if user is in group
+        if groups "$INVOKING_USER" | grep -q "\bdocker\b"; then
+            log "User $INVOKING_USER is already in 'docker' group, but session needs update."
+        else
+            log "Auto-Healing: Adding $INVOKING_USER to the 'docker' group..."
+            groupadd -f docker || true
+            usermod -aG docker "$INVOKING_USER"
+            success "User $INVOKING_USER added to 'docker' group successfully."
+        fi
+        
+        warn "IMPORTANT: To apply permissions permanently, run 'newgrp docker' or relogin."
+        
+        # Test again. If still failing, we might need a workaround for this script run
+        if ! sudo -u "$INVOKING_USER" docker ps &> /dev/null; then
+            warn "Session not updated. Using root-level orchestration to ensure zero-touch deployment."
+            FORCE_ROOT_ORCHESTRATION=true
+        fi
+    else
+        success "Docker permissions verified for $INVOKING_USER."
+        FORCE_ROOT_ORCHESTRATION=false
+    fi
+}
+
+# 5. Orchestration (Deploy)
 orchestrate() {
-    log "Launching Aegis Neural Kernel & Shell via Orchestrator..."
+    log "Launching Aegis Ecosystem via Orchestrator..."
     cd "$INSTALL_ROOT/Aegis-Installer"
     
     # Identify which docker compose command to use
@@ -130,11 +225,35 @@ orchestrate() {
     fi
 
     log "Building images and starting containers..."
-    sudo -u "$INVOKING_USER" $compose_cmd up -d --build
+    if [ "$FORCE_ROOT_ORCHESTRATION" == "true" ]; then
+        log "Running orchestrator with root privileges (session fallback)..."
+        if [ "$SELECTED_UI" == "web" ]; then
+            $compose_cmd --profile frontend up -d --build
+        else
+            $compose_cmd up -d --build
+        fi
+    else
+        if [ "$SELECTED_UI" == "web" ]; then
+            sudo -u "$INVOKING_USER" $compose_cmd --profile frontend up -d --build
+        else
+            sudo -u "$INVOKING_USER" $compose_cmd up -d --build
+        fi
+    fi
 }
 
-# 5. Post-Deployment Validation
+# 6. Post-Deployment Validation
 validate() {
+    if [ "$SELECTED_UI" == "headless" ]; then
+        log "Validation phase: Headless mode selected. Verifying Kernel container..."
+        sleep 5
+        if docker ps | grep -q aegis-ank; then
+            success "Aegis Neural Kernel (ANK) container is running."
+        else
+            warn "Aegis Neural Kernel container might not be running. Check 'docker logs aegis-ank'."
+        fi
+        return
+    fi
+
     log "Validation phase: Waiting for Kernel and BFF to stabilize (approx. 30s)..."
     
     local max_retries=15
@@ -175,7 +294,9 @@ echo -e "----------------------------------------------------------------"
 
 check_dependencies
 setup_workspace
+configure_profile
 security_guard
+preflight_hardening
 orchestrate
 validate
 
@@ -188,8 +309,13 @@ echo -e "${GREEN}#          AEGIS OS - DEPLOYMENT COMPLETED                     
 echo -e "${GREEN}################################################################${NC}"
 echo -e "\n"
 echo -e "${YELLOW}Despliegue finalizado. Tu llave criptográfica Root ha sido autogenerada.${NC}"
-echo -e "NEXUS INTERFACE:  ${MAGENTA}http://${SERVER_IP}:8000${NC}"
-echo -e "MONITOR LOGS:     ${CYAN}cd $INSTALL_ROOT/Aegis-Installer && docker compose logs -f${NC}"
-echo -e "SRE DASHBOARD:    ${CYAN}http://${SERVER_IP}:8000/health${NC}"
-echo -e "\n${CYAN}¡La Aegis Shell está lista para defender el nexo! Ingresa a http://${SERVER_IP}:8000 para configurar la Inteligencia.${NC}"
+if [ "$SELECTED_UI" == "web" ]; then
+    echo -e "NEXUS INTERFACE:  ${MAGENTA}http://${SERVER_IP}:8000${NC}"
+    echo -e "MONITOR LOGS:     ${CYAN}cd $INSTALL_ROOT/Aegis-Installer && docker compose logs -f${NC}"
+    echo -e "SRE DASHBOARD:    ${CYAN}http://${SERVER_IP}:8000/health${NC}"
+    echo -e "\n${CYAN}¡La Aegis Shell está lista para defender el nexo! Ingresa a http://${SERVER_IP}:8000 para configurar la Inteligencia.${NC}"
+else
+    echo -e "MONITOR LOGS:     ${CYAN}cd $INSTALL_ROOT/Aegis-Installer && docker compose logs -f ank-server${NC}"
+    echo -e "\n${CYAN}Kernel Headless desplegado. Interactúa directamente en el puerto 50051 (gRPC).${NC}"
+fi
 echo -e "Estado del Sistema: ${GREEN}READY${NC}"
