@@ -1,5 +1,15 @@
 # Changelog
  
+## [1.4.0] - 2026-03-12
+### Changed
+- **[INST-106] Professional Bootstrapper Redesign**:
+    - Migración completa de `whiptail` a `dialog` para una gestión robusta del TTY.
+    - Implementada arquitectura "Zero-Error" con redirección de descriptores de archivo (`exec 3>&1`).
+    - Añadido Banner ASCII profesional y estética Linux de grado servidor.
+    - Implementado sistema de **Pre-flight Audit** (CPU, RAM, Docker, GPU) con reporte visual.
+    - Agregadas barras de progreso (`gauge`) para la sincronización de repositorios.
+    - Soporte nativo para Modo Dual (Interactivo vs Scripted/Headless).
+
 ## [1.3.2] - 2026-03-12
 ### Fixed
 - **[INST-105] TUI TTY Allocation & Protection**:
