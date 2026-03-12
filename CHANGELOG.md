@@ -1,12 +1,12 @@
 # Changelog
  
-## [1.3.1] - 2026-03-12
+## [1.3.2] - 2026-03-12
 ### Fixed
-- **[INST-104] Docker Auto-Healing & GPU Pre-flight**:
-    - Implementado auto-healing de permisos de Docker: detección automática de "Permission Denied" y asignación automática al grupo `docker`.
-    - Agregada validación pre-flight de hardware para el perfil `Monolith` mediante chequeo de `nvidia-smi` y drivers.
-    - Robustecimiento de la orquestación: implementación de fallback a ejecución con privilegios de root si la sesión del usuario no registra los cambios de grupo en tiempo real.
+- **[INST-105] TUI TTY Allocation Fix**:
+    - Forzada la redirección de entrada estándar para `whiptail` mediante `< /dev/tty`, permitiendo el funcionamiento interactivo cuando el script es invocado vía pipes (`curl | bash`).
+    - Implementado chequeo de existencia de `/dev/tty` con fallback automático al perfil base "Microkernel" en entornos puramente headless o sin terminal asignado.
 
+## [1.3.1] - 2026-03-12
 ## [1.3.0] - 2026-03-11
 ### Added
 - **[ANK-2001] Aegis Bootstrapper (TUI)**:

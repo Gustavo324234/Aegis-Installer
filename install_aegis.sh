@@ -111,14 +111,19 @@ configure_profile() {
         warn "whiptail not found. Falling back to default profiles."
         HW_PROFILE="1"
         UI_PROFILE="1"
+    elif [ ! -t 0 ] && [ ! -c /dev/tty ]; then
+        warn "Terminal not interactive and /dev/tty not accessible. Assuming default Microkernel profile."
+        HW_PROFILE="1"
+        UI_PROFILE="1"
     else
+        # Force stderr/stdout redirection for whiptail and attach to /dev/tty
         HW_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Deployment Profile:" 15 65 2 \
         "1" "Microkernel (Cloud/Edge) - Lightweight" \
-        "2" "Monolith (Local GPU) - Heavy" 3>&1 1>&2 2>&3) || HW_PROFILE="1"
+        "2" "Monolith (Local GPU) - Heavy" 3>&1 1>&2 2>&3 < /dev/tty) || HW_PROFILE="1"
         
         UI_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Interface Profile:" 15 65 2 \
         "1" "Aegis Shell (Web UI)" \
-        "2" "Headless (Kernel Only)" 3>&1 1>&2 2>&3) || UI_PROFILE="1"
+        "2" "Headless (Kernel Only)" 3>&1 1>&2 2>&3 < /dev/tty) || UI_PROFILE="1"
     fi
 
     if [ "$HW_PROFILE" == "2" ]; then
