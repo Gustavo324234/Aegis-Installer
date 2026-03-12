@@ -2,9 +2,11 @@
  
 ## [1.3.2] - 2026-03-12
 ### Fixed
-- **[INST-105] TUI TTY Allocation Fix**:
-    - Forzada la redirección de entrada estándar para `whiptail` mediante `< /dev/tty`, permitiendo el funcionamiento interactivo cuando el script es invocado vía pipes (`curl | bash`).
-    - Implementado chequeo de existencia de `/dev/tty` con fallback automático al perfil base "Microkernel" en entornos puramente headless o sin terminal asignado.
+- **[INST-105] TUI TTY Allocation & Protection**:
+    - Forzada la redirección de entrada estándar para `whiptail` mediante `< /dev/tty`.
+    - Implementado flag `--no-tui` para forzar el modo texto puro.
+    - Agregado mecanismo de **Hard-Fallback**: detección automática de errores de renderizado ANSI con limpieza de pantalla (`clear`) y transición automática a un diálogo CLI estándar (`read -p`).
+    - Robustecimiento del `Bootstrapper` para entornos de despliegue remotos con asignación de terminal defectuosa.
 
 ## [1.3.1] - 2026-03-12
 ## [1.3.0] - 2026-03-11

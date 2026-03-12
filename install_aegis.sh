@@ -13,6 +13,15 @@ INSTALL_ROOT="/opt/aegis"
 REPO_BASE="https://github.com/Gustavo324234"
 REPOS=("Aegis-ANK" "Aegis-Shell" "Aegis-Installer")
 FORCE_ROOT_ORCHESTRATION=false
+USE_TUI=true
+
+# --- Argument Parsing ---
+for arg in "$@"; do
+    case "$arg" in
+        --no-tui) USE_TUI=false ;;
+        *) ;;
+    esac
+done
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -102,30 +111,34 @@ setup_workspace() {
     done
 }
 
-# 3. Interactive Configuration (Aegis Bootstrapper)
-configure_profile() {
-    log "Initiating Aegis Bootstrapper (TUI)..."
+# 3. Simple Interactive Configuration (Fallback/Legacy)
+configure_profile_legacy() {
+    log "Operating in Standard Terminal mode (Non-TUI)..."
+    echo -e "${YELLOW}Wait! TUI rendered incorrectly or --no-tui was requested.${NC}"
     
-    # Check if we should run interactively
-    if ! command -v whiptail &> /dev/null; then
-        warn "whiptail not found. Falling back to default profiles."
-        HW_PROFILE="1"
-        UI_PROFILE="1"
-    elif [ ! -t 0 ] && [ ! -c /dev/tty ]; then
-        warn "Terminal not interactive and /dev/tty not accessible. Assuming default Microkernel profile."
-        HW_PROFILE="1"
-        UI_PROFILE="1"
-    else
-        # Force stderr/stdout redirection for whiptail and attach to /dev/tty
-        HW_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Deployment Profile:" 15 65 2 \
-        "1" "Microkernel (Cloud/Edge) - Lightweight" \
-        "2" "Monolith (Local GPU) - Heavy" 3>&1 1>&2 2>&3 < /dev/tty) || HW_PROFILE="1"
-        
-        UI_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Interface Profile:" 15 65 2 \
-        "1" "Aegis Shell (Web UI)" \
-        "2" "Headless (Kernel Only)" 3>&1 1>&2 2>&3 < /dev/tty) || UI_PROFILE="1"
-    fi
+    echo -e "\nSelect Hardware Profile:"
+    echo "1) Microkernel (Cloud/Edge) - Lightweight [Default]"
+    echo "2) Monolith (Local GPU) - Heavy"
+    read -p "Selection [1-2]: " hw_choice
+    case "$hw_choice" in
+        2) HW_PROFILE="2" ;;
+        *) HW_PROFILE="1" ;;
+    esac
 
+    echo -e "\nSelect Interface Profile:"
+    echo "1) Aegis Shell (Web UI) [Default]"
+    echo "2) Headless (Kernel Only)"
+    read -p "Selection [1-2]: " ui_choice
+    case "$ui_choice" in
+        2) UI_PROFILE="2" ;;
+        *) UI_PROFILE="1" ;;
+    esac
+
+    apply_profiles
+}
+
+# helper to apply profiles logically
+apply_profiles() {
     if [ "$HW_PROFILE" == "2" ]; then
         SELECTED_FEATURES="full_local"
         log "Hardware Profile: Monolith (Local GPU)"
@@ -141,6 +154,49 @@ configure_profile() {
         SELECTED_UI="web"
         log "Interface Profile: Aegis Shell (Web UI)"
     fi
+}
+
+# 3. Interactive Configuration (Aegis Bootstrapper)
+configure_profile() {
+    log "Initiating Aegis Bootstrapper (TUI)..."
+    
+    # 1. Check for ANSI Garbage or forced No-TUI
+    if [ "$USE_TUI" = false ]; then
+        configure_profile_legacy
+        return
+    fi
+
+    # 2. Check if we should even try whiptail
+    if ! command -v whiptail &> /dev/null || [ ! -c /dev/tty ]; then
+        warn "whiptail not found or /dev/tty not accessible. Falling back."
+        configure_profile_legacy
+        return
+    fi
+    
+    # 3. Attempt TUI with exception handling
+    # We clear the screen first to ensure a clean slate
+    clear
+    
+    # Execute whiptail and capture status. If exit code != 0, it likely failed to render
+    if ! HW_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Deployment Profile:" 15 65 2 \
+        "1" "Microkernel (Cloud/Edge) - Lightweight" \
+        "2" "Monolith (Local GPU) - Heavy" 3>&1 1>&2 2>&3 < /dev/tty); then
+        clear
+        warn "TUI Error detected (ANSI collision). Aborting graphical mode."
+        configure_profile_legacy
+        return
+    fi
+    
+    if ! UI_PROFILE=$(whiptail --title "Aegis OS Bootstrapper" --menu "Select Interface Profile:" 15 65 2 \
+        "1" "Aegis Shell (Web UI)" \
+        "2" "Headless (Kernel Only)" 3>&1 1>&2 2>&3 < /dev/tty); then
+        clear
+        warn "TUI Error detected in selection. Falling back to CLI."
+        configure_profile_legacy
+        return
+    fi
+
+    apply_profiles
 }
 
 # 4. Security Guard (.env Check & Auto-Gen)
