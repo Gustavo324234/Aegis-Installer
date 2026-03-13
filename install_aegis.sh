@@ -18,6 +18,11 @@ USE_TUI=true
 HW_PROFILE="1"
 UI_PROFILE="1"
 INVOKING_USER=${SUDO_USER:-$(whoami)}
+LOG_FILE="/tmp/aegis_install.log"
+
+# Initialize log file
+: > "$LOG_FILE"
+chown "$INVOKING_USER":"$INVOKING_USER" "$LOG_FILE" 2>/dev/null || true
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -31,27 +36,40 @@ NC='\033[0m'
 print_banner() {
     echo -e "${CYAN}"
     cat << "EOF"
-       ___  ___________ _____   _____ _____ 
-      / _ \|  ___|  __ \_   _| /  ___|  _  |
-     / /_\ \ |__ | |  \/ | |   \ `--.| | | |
-     |  _  |  __|| | __  | |    `--. \ | | |
-     | | | | |___| |_\ \_| |_  /\__/ \ \_/ /
-     \_| |_|____/ \____/\___/  \____/ \___/ 
-                                         [ANK]
+    ___  _____ _____ _____ _____   _____ _____
+   / _ \|  ___|  __ \_   _/  ___| |  _  /  ___|
+  / /_\ \ |__ | |  \/ | | \ `--.  | | | \ `--. 
+  |  _  |  __|| | __  | |  `--. \ | | | `--. \
+  | | | | |___| |_\ \_| |_/\__/ / \ \_/ /\__/ /
+  \_| |_\____/ \____/\___/\____/   \___/\____/
 EOF
     echo -e "${NC}"
-    echo -e "Aegis OS Professional Bootstrapper - v1.1.0"
-    echo -e "----------------------------------------------------------------"
+    echo -e "      Aegis OS Professional Bootstrapper - v1.4.2"
+    echo -e "------------------------------------------------------------"
 }
 
 # --- Helper Functions ---
-log() { echo -e "${CYAN}[INFO]${NC} $1"; }
-success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log() { 
+    echo -e "[INFO] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
+    [ "$USE_TUI" = false ] && echo -e "${CYAN}[INFO]${NC} $1"
+}
+
+success() { 
+    echo -e "[SUCCESS] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
+    [ "$USE_TUI" = false ] && echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
+
+warn() { 
+    echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
+    [ "$USE_TUI" = false ] && echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
 error() { 
-    echo -e "${RED}[ERROR]${NC} $1" >&2
+    echo -e "[ERROR] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
     if [ "$USE_TUI" = true ] && command -v dialog &> /dev/null && [ -t 0 ]; then
-        dialog --title "CRITICAL ERROR" --msgbox "$1" 10 60
+        dialog --title "CRITICAL ERROR" --msgbox "$1" 10 60 --clear
+    else
+        echo -e "${RED}[ERROR]${NC} $1" >&2
     fi
     exit 1 
 }
@@ -71,6 +89,7 @@ fi
 
 # 1. Pre-flight & System Audit
 check_system_requirements() {
+    [ "$USE_TUI" = true ] && clear
     log "Performing System Audit..."
     
     local cpu_cores=$(nproc)
@@ -86,7 +105,8 @@ check_system_requirements() {
         # Check if dialog is missing and install it first
         if ! command -v dialog &> /dev/null; then
             log "Installing 'dialog' for enhanced TUI experience..."
-            apt-get update -qq && apt-get install -y dialog -qq > /dev/null
+            apt-get update -qq >> "$LOG_FILE" 2>&1
+            apt-get install -y dialog -qq >> "$LOG_FILE" 2>&1
         fi
 
         # Pre-flight report in a dialog box
@@ -100,7 +120,7 @@ check_system_requirements() {
             report+="[WARNING] Low RAM detected. Installation might be unstable."
         fi
 
-        dialog --title "Aegis System Audit" --msgbox "$report" 15 60
+        dialog --title "Aegis System Audit" --msgbox "$report" 15 60 --clear
     else
         echo "----------------------------------------------------------------"
         printf "| %-20s | %-35s |\n" "REQ" "STATUS"
@@ -120,29 +140,30 @@ check_system_requirements() {
 
 # 2. Self-Healing Dependencies
 install_dependencies() {
+    [ "$USE_TUI" = true ] && clear
     log "Synchronizing base dependencies..."
     
-    apt-get update -qq
+    apt-get update -qq >> "$LOG_FILE" 2>&1
     local basic_deps=("git" "curl" "dialog" "openssl")
     for dep in "${basic_deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
-            apt-get install -y "$dep" -qq > /dev/null || error "Failed to install $dep"
+            apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
         fi
     done
 
     # Docker
     if ! command -v docker &> /dev/null; then
         log "Installing Docker Engine (Native Pipeline)..."
-        curl -fsSL https://get.docker.com | sh > /dev/null || error "Failed to install Docker"
-        systemctl enable --now docker
+        curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
+        systemctl enable --now docker >> "$LOG_FILE" 2>&1
     fi
 
     # Docker Compose V2
     if ! docker compose version &> /dev/null; then
         log "Installing Docker Compose Plugin..."
-        apt-get install -y docker-compose-plugin -qq > /dev/null || {
+        apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1 || {
             warn "Apt plugin failed, falling back to standalone..."
-            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> "$LOG_FILE" 2>&1
             chmod +x /usr/local/bin/docker-compose
         }
     fi
@@ -192,10 +213,11 @@ configure_profiles() {
 
 # 4. Workspace & Repository Sync (with Progress Bar)
 setup_workspace() {
+    [ "$USE_TUI" = true ] && clear
     log "Mounting filesystem at $INSTALL_ROOT..."
-    mkdir -p "$INSTALL_ROOT"
-    chown -R "$INVOKING_USER":"$INVOKING_USER" "$INSTALL_ROOT"
-    cd "$INSTALL_ROOT"
+    mkdir -p "$INSTALL_ROOT" >> "$LOG_FILE" 2>&1
+    chown -R "$INVOKING_USER":"$INVOKING_USER" "$INSTALL_ROOT" >> "$LOG_FILE" 2>&1
+    cd "$INSTALL_ROOT" >> "$LOG_FILE" 2>&1
 
     local total_repos=${#REPOS[@]}
     local current=0
@@ -205,20 +227,20 @@ setup_workspace() {
         local progress=$((current * 100 / total_repos))
         
         if [ "$USE_TUI" = true ]; then
-            echo "$progress" | dialog --title "DEPLOYMENT" --gauge "Cloning repositories ($current/$total_repos): $repo..." 10 70 0
+            echo "$progress" | dialog --title "DEPLOYMENT" --gauge "Cloning repositories ($current/$total_repos): $repo..." 10 70 0 --clear
         fi
 
         if [ -d "$repo" ]; then
             log "Syncing $repo..."
-            sudo -u "$INVOKING_USER" bash -c "cd $repo && git pull -q"
+            sudo -u "$INVOKING_USER" bash -c "cd $repo && git pull -q" >> "$LOG_FILE" 2>&1
         else
             log "Cloning $repo..."
-            sudo -u "$INVOKING_USER" git clone -q "$REPO_BASE/$repo.git"
+            sudo -u "$INVOKING_USER" git clone -q "$REPO_BASE/$repo.git" >> "$LOG_FILE" 2>&1
         fi
     done
 
     if [ "$USE_TUI" = true ]; then
-        dialog --title "WORKSPACE READY" --msgbox "All repositories successfully synchronized in $INSTALL_ROOT" 10 60
+        dialog --title "WORKSPACE READY" --msgbox "All repositories successfully synchronized in $INSTALL_ROOT" 10 60 --clear
     fi
 }
 
@@ -244,8 +266,9 @@ EOT
 
 # 6. Orchestration
 orchestrate() {
+    [ "$USE_TUI" = true ] && clear
     log "Initializing Docker Orchestrator..."
-    cd "$INSTALL_ROOT/Aegis-Installer"
+    cd "$INSTALL_ROOT/Aegis-Installer" >> "$LOG_FILE" 2>&1
     
     local compose_cmd="docker compose"
     docker compose version &> /dev/null || compose_cmd="docker-compose"
@@ -256,14 +279,15 @@ orchestrate() {
     fi
 
     log "Executing deployment plan..."
-    if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d --build; then
+    if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1; then
         warn "Permission issue detected. Falling back to Root Orchestration..."
-        $compose_cmd $profile_flag up -d --build || error "Orchestration failed."
+        $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1 || error "Orchestration failed."
     fi
 }
 
 # 7. Final Success Screen
 print_success() {
+    [ "$USE_TUI" = true ] && clear
     SERVER_IP=$(curl -s --connect-timeout 2 https://ifconfig.me || echo "localhost")
     local msg="\n"
     msg+="AEGIS OS - DEPLOYMENT COMPLETED\n"
@@ -279,7 +303,7 @@ print_success() {
     fi
 
     if [ "$USE_TUI" = true ]; then
-        dialog --title "DESPLIEGUE EXITOSO" --msgbox "$msg" 15 60
+        dialog --title "DESPLIEGUE EXITOSO" --msgbox "$msg" 15 60 --clear
         clear
     fi
 

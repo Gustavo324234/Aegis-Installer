@@ -1,5 +1,20 @@
 # Changelog
  
+## [1.4.2] - 2026-03-12
+### Added
+- **[INST-108] TUI Buffer Cleanup & Ghosting Fix**:
+    - Implementada redirección masiva de logs a `/tmp/aegis_install.log` para silenciar comandos ruidosos (`apt`, `git`, `docker`) durante la operación del TUI.
+    - Agregado flag mandatory `--clear` a todas las invocaciones de `dialog` para prevenir el apilamiento de artefactos visuales.
+    - Añadidas limpiezas de pantalla de transición (`clear`) entre bloques lógicos del instalador.
+    - Refactorizadas las funciones de log (`log`, `success`, `warn`) para operar en modo silencioso cuando el TUI está activo, manteniendo la trazabilidad en el archivo de log.
+
+## [1.4.1] - 2026-03-12
+### Fixed
+- **[INST-107] ASCII Banner Correction**:
+    - Corregido typo en el banner (de "AEGI SO" a "AEGIS OS").
+    - Optimizado el ancho del arte ASCII para máxima compatibilidad con TTYs estrechos (60 col).
+    - Eliminados espacios de padding inconsistentes que rompían el renderizado en SSH.
+
 ## [1.4.0] - 2026-03-12
 ### Changed
 - **[INST-106] Professional Bootstrapper Redesign**:
