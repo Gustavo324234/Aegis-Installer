@@ -1,5 +1,13 @@
 # Changelog
  
+## [1.4.3] - 2026-03-15
+### Fixed
+- **[INST-109] Zero-Touch Log Permission Fix**:
+    - Garantizada la ejecución exitosa del comando oficial de una sola línea (`curl ... | sudo bash`) mediante el saneamiento agresivo de permisos en `/tmp/aegis_install.log`.
+    - Implementada destrucción y recreación del archivo de log con permisos universales (`666`) al inicio del script para evitar errores de `Permission denied`.
+    - Silenciadas las salidas de error de `rm` y `chmod` para mantener la integridad visual del banner ASCII.
+    - Asegurada la consistencia del logging delegando todas las operaciones a la variable `$LOG_FILE`.
+
 ## [1.4.2] - 2026-03-12
 ### Added
 - **[INST-108] TUI Buffer Cleanup & Ghosting Fix**:

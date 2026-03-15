@@ -1,10 +1,16 @@
 #!/bin/bash
+LOG_FILE="/tmp/aegis_install.log"
+# Saneamiento SRE: Destruir el log viejo y crear uno con permisos universales
+rm -f "$LOG_FILE" 2>/dev/null || true
+touch "$LOG_FILE"
+chmod 666 "$LOG_FILE" 2>/dev/null || true
+
 # ==============================================================================
 # AEGIS NEURAL KERNEL & SHELL - PROFESSIONAL BOOTSTRAPPER (SRE GRADE)
 # ==============================================================================
 # OS: Ubuntu / Debian / Linux
 # Author: Antigravity SRE Team
-# Ticket: INST-106
+# Ticket: INST-109
 # ==============================================================================
 
 set -eo pipefail
@@ -18,11 +24,6 @@ USE_TUI=true
 HW_PROFILE="1"
 UI_PROFILE="1"
 INVOKING_USER=${SUDO_USER:-$(whoami)}
-LOG_FILE="/tmp/aegis_install.log"
-
-# Initialize log file
-: > "$LOG_FILE"
-chown "$INVOKING_USER":"$INVOKING_USER" "$LOG_FILE" 2>/dev/null || true
 
 # --- Colors ---
 RED='\033[0;31m'
