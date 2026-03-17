@@ -147,16 +147,25 @@ install_dependencies() {
     [ "$USE_TUI" = true ] && clear
     log "Synchronizing base dependencies..."
     
+    if [ "$USE_TUI" = true ]; then
+        dialog --title "Phase 2: Dependencies" --infobox "Updating package index..." 5 50
+    fi
     apt-get update -qq >> "$LOG_FILE" 2>&1
     local basic_deps=("git" "curl" "dialog" "openssl")
     for dep in "${basic_deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
+            if [ "$USE_TUI" = true ]; then
+                dialog --title "Phase 2: Dependencies" --infobox "Installing $dep..." 5 50
+            fi
             apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
         fi
     done
 
     # Docker
     if ! command -v docker &> /dev/null; then
+        if [ "$USE_TUI" = true ]; then
+            dialog --title "Phase 2: Dependencies" --infobox "Installing Docker Engine...\nThis may take 2-3 minutes." 6 55
+        fi
         log "Installing Docker Engine (Native Pipeline)..."
         curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
         systemctl enable --now docker >> "$LOG_FILE" 2>&1
@@ -164,12 +173,20 @@ install_dependencies() {
 
     # Docker Compose V2
     if ! docker compose version &> /dev/null; then
+        if [ "$USE_TUI" = true ]; then
+            dialog --title "Phase 2: Dependencies" --infobox "Installing Docker Compose..." 5 50
+        fi
         log "Installing Docker Compose Plugin..."
         apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1 || {
             warn "Apt plugin failed, falling back to standalone..."
             curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> "$LOG_FILE" 2>&1
             chmod +x /usr/local/bin/docker-compose
         }
+    fi
+
+    if [ "$USE_TUI" = true ]; then
+        dialog --title "Phase 2: Dependencies" --infobox "✓ All dependencies ready." 5 40
+        sleep 1
     fi
 }
 
@@ -232,9 +249,11 @@ configure_profiles() {
 setup_workspace() {
     [ "$USE_TUI" = true ] && clear
     log "Mounting filesystem at $INSTALL_ROOT..."
-    mkdir -p "$INSTALL_ROOT" >> "$LOG_FILE" 2>&1
-    chown -R "$INVOKING_USER":"$INVOKING_USER" "$INSTALL_ROOT" >> "$LOG_FILE" 2>&1
-    cd "$INSTALL_ROOT" >> "$LOG_FILE" 2>&1
+    {
+        mkdir -p "$INSTALL_ROOT"
+        chown -R "$INVOKING_USER":"$INVOKING_USER" "$INSTALL_ROOT"
+        cd "$INSTALL_ROOT"
+    } >> "$LOG_FILE" 2>&1
 
     local total_repos=${#REPOS[@]}
     local current=0
@@ -257,7 +276,8 @@ setup_workspace() {
     done
 
     if [ "$USE_TUI" = true ]; then
-        dialog --title "WORKSPACE READY" --msgbox "All repositories successfully synchronized in $INSTALL_ROOT" 10 60 --clear
+        dialog --title "WORKSPACE READY" --infobox "✓ Repositories synchronized." 5 45
+        sleep 1
     fi
 }
 
@@ -351,12 +371,12 @@ orchestrate() {
     log "Initializing Docker Orchestrator..."
     cd "$INSTALL_ROOT/Aegis-Installer" >> "$LOG_FILE" 2>&1
     
-    local compose_cmd="docker compose"
-    docker compose version &> /dev/null || compose_cmd="docker-compose"
+    local compose_cmd=("docker" "compose")
+    docker compose version &> /dev/null || compose_cmd=("docker-compose")
 
-    local profile_flag=""
+    local profile_flag=()
     if [ "$SELECTED_UI" == "web" ]; then
-        profile_flag="--profile frontend"
+        profile_flag=("--profile" "frontend")
     fi
 
     # Pre-create volume directories with correct ownership before Docker tries
@@ -368,16 +388,17 @@ orchestrate() {
     log "Executing deployment plan (profile: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
 
     if [ "$USE_TUI" = true ]; then
-        dialog --title "Orchestration" --infobox "Starting deployment... This may take a while.\nLogging to $LOG_FILE" 5 60
+        dialog --title "Phase 8: Deployment" \
+          --infobox "Pulling Docker images from GHCR...\nThis may take several minutes on first run.\n\nLog: /tmp/aegis_install.log" 8 60
     fi
 
     if [ "$HW_PROFILE" = "2" ]; then
-        $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1 \
+        "${compose_cmd[@]}" "${profile_flag[@]}" up -d --build >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
     else
-        $compose_cmd $profile_flag pull >> "$LOG_FILE" 2>&1 \
+        "${compose_cmd[@]}" "${profile_flag[@]}" pull >> "$LOG_FILE" 2>&1 \
             || warn "Image pull failed — continuing with cached images."
-        $compose_cmd $profile_flag up -d >> "$LOG_FILE" 2>&1 \
+        "${compose_cmd[@]}" "${profile_flag[@]}" up -d >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
     fi
 }
