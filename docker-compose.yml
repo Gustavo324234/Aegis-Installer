@@ -2,6 +2,7 @@ version: '3.8'
 
 services:
   ank-server:
+    image: ghcr.io/gustavo324234/aegis-ank:latest
     build:
       context: ../Aegis-ANK
       dockerfile: Dockerfile
@@ -30,6 +31,7 @@ services:
       - "50051"
 
   aegis-shell:
+    image: ghcr.io/gustavo324234/aegis-shell:latest
     build:
       context: ../Aegis-Shell
       dockerfile: Dockerfile

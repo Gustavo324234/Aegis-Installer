@@ -13,16 +13,17 @@ chmod 666 "$LOG_FILE" 2>/dev/null || true
 # Ticket: INST-109
 # ==============================================================================
 
-set -eo pipefail
+set -euo pipefail
 
 # --- Configuration ---
 INSTALL_ROOT="/opt/aegis"
 REPO_BASE="https://github.com/Gustavo324234"
 REPOS=("Aegis-ANK" "Aegis-Shell" "Aegis-Installer")
-FORCE_ROOT_ORCHESTRATION=false
 USE_TUI=true
 HW_PROFILE="1"
 UI_PROFILE="1"
+SELECTED_FEATURES=""
+SELECTED_UI="web"
 INVOKING_USER=${SUDO_USER:-$(whoami)}
 
 # --- Colors ---
@@ -30,7 +31,6 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
-MAGENTA='\033[0;35m'
 NC='\033[0m'
 
 # --- Banner ---
@@ -93,13 +93,16 @@ check_system_requirements() {
     [ "$USE_TUI" = true ] && clear
     log "Performing System Audit..."
     
-    local cpu_cores=$(nproc)
-    local ram_gb=$(free -g | awk '/^Mem:/{print $2}')
-    local docker_status=$(command -v docker &> /dev/null && echo "INSTALLED" || echo "MISSING")
+    local cpu_cores
+    cpu_cores=$(nproc)
+    local ram_gb
+    ram_gb=$(free -g | awk '/^Mem:/{print $2}')
+    local docker_status
+    docker_status=$(command -v docker &> /dev/null && echo "INSTALLED" || echo "MISSING")
     local nvidia_status="NOT DETECTED"
     
     if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
-        nvidia_status=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n 1)
+        nvidia_status=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n 1)
     fi
 
     if [ "$USE_TUI" = true ]; then
@@ -182,12 +185,25 @@ configure_profiles() {
     # Zero-Error TTY Redirection
     exec 3>&1
 
-    HW_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
-        --backtitle "Aegis Neural Kernel Deployment" \
-        --menu "Select Hardware Profile:" 15 65 2 \
-        "1" "Microkernel (Cloud/Edge) - Optimized for < 4GB RAM" \
-        "2" "Monolith (Local GPU) - Optimized for AI & Heavy Workloads" \
-        2>&1 1>&3) || HW_PROFILE="1"
+    local ram_mb
+    ram_mb=$(free -m | awk '/^Mem:/{print $2}')
+
+    while true; do
+        HW_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
+            --backtitle "Aegis Neural Kernel Deployment" \
+            --menu "Select Orchestration Profile:" 15 75 3 \
+            "1" "Cloud/Edge (Download GHCR Images - < 2GB RAM)" \
+            "2" "Local Monolith (Build from source - High RAM/CPU)" \
+            "3" "Hybrid GPU (Download Images + NVIDIA Runtime)" \
+            2>&1 1>&3) || HW_PROFILE="1"
+
+        if [ "${ram_mb:-2048}" -lt 2000 ] && [ "$HW_PROFILE" = "2" ]; then
+            if ! dialog --clear --title "OOMKill Warning" --yesno "WARNING: Your system has ${ram_mb}MB RAM (< 2000MB).\nBuilding from source (Profile 2) will likely cause an OOMKill.\n\nContinue anyway?" 10 60; then
+                continue
+            fi
+        fi
+        break
+    done
 
     UI_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
         --backtitle "Aegis Neural Kernel Deployment" \
@@ -251,7 +267,8 @@ security_guard() {
     ENV_PATH="$INSTALL_ROOT/Aegis-Installer/.env"
     
     if [ ! -f "$ENV_PATH" ]; then
-        local root_key=$(openssl rand -hex 32)
+        local root_key
+        root_key=$(openssl rand -hex 32)
         cat <<EOT > "$ENV_PATH"
 AEGIS_ROOT_KEY=$root_key
 ANK_TARGET=ank-server:50051
@@ -265,7 +282,60 @@ EOT
     fi
 }
 
-# 6. Orchestration
+# 6. Unprivileged Service Account
+create_aegis_user() {
+    log "Provisioning unprivileged 'aegis' system user..."
+    if id -u aegis &> /dev/null; then
+        log "User 'aegis' already exists — skipping creation."
+    else
+        if ! useradd --system --no-create-home --shell /sbin/nologin aegis >> "$LOG_FILE" 2>&1; then
+            error "Failed to create system user 'aegis'."
+        fi
+        success "System user 'aegis' created."
+    fi
+}
+
+# 7. Systemd Service Installation
+install_systemd_service() {
+    log "Installing hardened aegis.service systemd unit..."
+
+    local unit_file="/etc/systemd/system/aegis.service"
+
+    cat > "$unit_file" <<'UNIT'
+[Unit]
+Description=Aegis OS Bootstrap Orchestrator
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=aegis
+WorkingDirectory=/opt/aegis/Aegis-Installer
+ExecStart=/bin/bash /opt/aegis/Aegis-Installer/install_aegis.sh --no-tui
+StandardOutput=journal
+StandardError=journal
+
+# Systemd hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/aegis /tmp
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+    chmod 644 "$unit_file"
+
+    if ! systemctl daemon-reload >> "$LOG_FILE" 2>&1; then
+        warn "systemctl daemon-reload failed — systemd may not be running in this environment."
+    else
+        success "Systemd unit installed and daemon reloaded: $unit_file"
+    fi
+}
+
+# 8. Orchestration
 orchestrate() {
     [ "$USE_TUI" = true ] && clear
     log "Initializing Docker Orchestrator..."
@@ -280,13 +350,29 @@ orchestrate() {
     fi
 
     log "Executing deployment plan..."
-    if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1; then
-        warn "Permission issue detected. Falling back to Root Orchestration..."
-        $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1 || error "Orchestration failed."
+    
+    if [ "$USE_TUI" = true ]; then
+        dialog --title "Orchestration" --infobox "Starting deployment... This may take a while.\nLogging to $LOG_FILE" 5 60
+    fi
+
+    if [ "$HW_PROFILE" = "2" ]; then
+        if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1; then
+            warn "Permission issue detected. Falling back to Root Orchestration..."
+            $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1 || error "Orchestration failed."
+        fi
+    else
+        if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag pull >> "$LOG_FILE" 2>&1; then
+            warn "Permission issue or pull failed. Falling back to Root..."
+            $compose_cmd $profile_flag pull >> "$LOG_FILE" 2>&1 || warn "Pull failed, continuing..."
+        fi
+        if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d >> "$LOG_FILE" 2>&1; then
+            warn "Permission issue detected during up. Falling back to Root Orchestration..."
+            $compose_cmd $profile_flag up -d >> "$LOG_FILE" 2>&1 || error "Orchestration failed."
+        fi
     fi
 }
 
-# 7. Final Success Screen
+# 9. Final Success Screen
 print_success() {
     [ "$USE_TUI" = true ] && clear
     SERVER_IP=$(curl -s --connect-timeout 2 https://ifconfig.me || echo "localhost")
@@ -322,5 +408,7 @@ install_dependencies
 configure_profiles
 setup_workspace
 security_guard
+create_aegis_user
+install_systemd_service
 orchestrate
 print_success
