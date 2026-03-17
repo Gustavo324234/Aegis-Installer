@@ -50,20 +50,9 @@ EOF
 }
 
 # --- Helper Functions ---
-log() { 
-    echo -e "[INFO] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
-    [ "$USE_TUI" = false ] && echo -e "${CYAN}[INFO]${NC} $1"
-}
-
-success() { 
-    echo -e "[SUCCESS] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
-    [ "$USE_TUI" = false ] && echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-warn() { 
-    echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
-    [ "$USE_TUI" = false ] && echo -e "${YELLOW}[WARN]${NC} $1"
-}
+log()     { echo -e "[INFO] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${CYAN}  →${NC} $1"; }
+success() { echo -e "[OK]   $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${GREEN}  ✓${NC} $1"; }
+warn()    { echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${YELLOW}  ⚠${NC} $1"; }
 
 error() { 
     echo -e "[ERROR] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
@@ -144,28 +133,18 @@ check_system_requirements() {
 
 # 2. Self-Healing Dependencies
 install_dependencies() {
-    [ "$USE_TUI" = true ] && clear
     log "Synchronizing base dependencies..."
     
-    if [ "$USE_TUI" = true ]; then
-        dialog --title "Phase 2: Dependencies" --infobox "Updating package index..." 5 50
-    fi
     apt-get update -qq >> "$LOG_FILE" 2>&1
     local basic_deps=("git" "curl" "dialog" "openssl")
     for dep in "${basic_deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
-            if [ "$USE_TUI" = true ]; then
-                dialog --title "Phase 2: Dependencies" --infobox "Installing $dep..." 5 50
-            fi
             apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
         fi
     done
 
     # Docker
     if ! command -v docker &> /dev/null; then
-        if [ "$USE_TUI" = true ]; then
-            dialog --title "Phase 2: Dependencies" --infobox "Installing Docker Engine...\nThis may take 2-3 minutes." 6 55
-        fi
         log "Installing Docker Engine (Native Pipeline)..."
         curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
         systemctl enable --now docker >> "$LOG_FILE" 2>&1
@@ -173,20 +152,12 @@ install_dependencies() {
 
     # Docker Compose V2
     if ! docker compose version &> /dev/null; then
-        if [ "$USE_TUI" = true ]; then
-            dialog --title "Phase 2: Dependencies" --infobox "Installing Docker Compose..." 5 50
-        fi
         log "Installing Docker Compose Plugin..."
         apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1 || {
             warn "Apt plugin failed, falling back to standalone..."
             curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> "$LOG_FILE" 2>&1
             chmod +x /usr/local/bin/docker-compose
         }
-    fi
-
-    if [ "$USE_TUI" = true ]; then
-        dialog --title "Phase 2: Dependencies" --infobox "✓ All dependencies ready." 5 40
-        sleep 1
     fi
 }
 
@@ -245,9 +216,8 @@ configure_profiles() {
     fi
 }
 
-# 4. Workspace & Repository Sync (with Progress Bar)
+# 4. Workspace & Repository Sync
 setup_workspace() {
-    [ "$USE_TUI" = true ] && clear
     log "Mounting filesystem at $INSTALL_ROOT..."
     {
         mkdir -p "$INSTALL_ROOT"
@@ -255,17 +225,7 @@ setup_workspace() {
         cd "$INSTALL_ROOT"
     } >> "$LOG_FILE" 2>&1
 
-    local total_repos=${#REPOS[@]}
-    local current=0
-
     for repo in "${REPOS[@]}"; do
-        current=$((current + 1))
-        local progress=$((current * 100 / total_repos))
-        
-        if [ "$USE_TUI" = true ]; then
-            echo "$progress" | dialog --title "DEPLOYMENT" --gauge "Cloning repositories ($current/$total_repos): $repo..." 10 70 0 --clear
-        fi
-
         if [ -d "$repo" ]; then
             log "Syncing $repo..."
             bash -c "cd $repo && git pull -q" >> "$LOG_FILE" 2>&1
@@ -274,11 +234,6 @@ setup_workspace() {
             git clone -q "$REPO_BASE/$repo.git" >> "$LOG_FILE" 2>&1
         fi
     done
-
-    if [ "$USE_TUI" = true ]; then
-        dialog --title "WORKSPACE READY" --infobox "✓ Repositories synchronized." 5 45
-        sleep 1
-    fi
 }
 
 # 5. Citadel Security Guard
@@ -367,7 +322,6 @@ UNIT
 
 # 8. Orchestration
 orchestrate() {
-    [ "$USE_TUI" = true ] && clear
     log "Initializing Docker Orchestrator..."
     cd "$INSTALL_ROOT/Aegis-Installer" >> "$LOG_FILE" 2>&1
     
@@ -386,11 +340,6 @@ orchestrate() {
                       "$INSTALL_ROOT/Aegis-Installer/models" 2>/dev/null || true
 
     log "Executing deployment plan (profile: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
-
-    if [ "$USE_TUI" = true ]; then
-        dialog --title "Phase 8: Deployment" \
-          --infobox "Pulling Docker images from GHCR...\nThis may take several minutes on first run.\n\nLog: /tmp/aegis_install.log" 8 60
-    fi
 
     if [ "$HW_PROFILE" = "2" ]; then
         "${compose_cmd[@]}" "${profile_flag[@]}" up -d --build >> "$LOG_FILE" 2>&1 \
