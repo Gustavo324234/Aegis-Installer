@@ -249,10 +249,10 @@ setup_workspace() {
 
         if [ -d "$repo" ]; then
             log "Syncing $repo..."
-            sudo -u "$INVOKING_USER" bash -c "cd $repo && git pull -q" >> "$LOG_FILE" 2>&1
+            bash -c "cd $repo && git pull -q" >> "$LOG_FILE" 2>&1
         else
             log "Cloning $repo..."
-            sudo -u "$INVOKING_USER" git clone -q "$REPO_BASE/$repo.git" >> "$LOG_FILE" 2>&1
+            git clone -q "$REPO_BASE/$repo.git" >> "$LOG_FILE" 2>&1
         fi
     done
 
@@ -293,6 +293,15 @@ create_aegis_user() {
         fi
         success "System user 'aegis' created."
     fi
+
+    # Add aegis to docker group so it can manage containers
+    if ! getent group docker &> /dev/null; then
+        groupadd docker >> "$LOG_FILE" 2>&1 || true
+    fi
+    if ! id -nG aegis | grep -qw docker; then
+        usermod -aG docker aegis >> "$LOG_FILE" 2>&1
+        success "User 'aegis' added to docker group."
+    fi
 }
 
 # 7. Systemd Service Installation
@@ -316,11 +325,12 @@ ExecStart=/bin/bash /opt/aegis/Aegis-Installer/install_aegis.sh --no-tui
 StandardOutput=journal
 StandardError=journal
 
-# Systemd hardening
+# Systemd hardening — defense in depth without breaking Docker volumes
 NoNewPrivileges=true
-ProtectSystem=strict
+ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/opt/aegis /tmp
+ReadWritePaths=/opt/aegis /tmp /var/run/docker.sock /var/lib/docker
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
@@ -349,26 +359,26 @@ orchestrate() {
         profile_flag="--profile frontend"
     fi
 
-    log "Executing deployment plan..."
-    
+    # Pre-create volume directories with correct ownership before Docker tries
+    mkdir -p "$INSTALL_ROOT/Aegis-Installer/users" \
+             "$INSTALL_ROOT/Aegis-Installer/models" >> "$LOG_FILE" 2>&1
+    chown aegis:aegis "$INSTALL_ROOT/Aegis-Installer/users" \
+                      "$INSTALL_ROOT/Aegis-Installer/models" 2>/dev/null || true
+
+    log "Executing deployment plan (profile: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
+
     if [ "$USE_TUI" = true ]; then
         dialog --title "Orchestration" --infobox "Starting deployment... This may take a while.\nLogging to $LOG_FILE" 5 60
     fi
 
     if [ "$HW_PROFILE" = "2" ]; then
-        if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1; then
-            warn "Permission issue detected. Falling back to Root Orchestration..."
-            $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1 || error "Orchestration failed."
-        fi
+        $compose_cmd $profile_flag up -d --build >> "$LOG_FILE" 2>&1 \
+            || error "Orchestration failed. Check $LOG_FILE"
     else
-        if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag pull >> "$LOG_FILE" 2>&1; then
-            warn "Permission issue or pull failed. Falling back to Root..."
-            $compose_cmd $profile_flag pull >> "$LOG_FILE" 2>&1 || warn "Pull failed, continuing..."
-        fi
-        if ! sudo -u "$INVOKING_USER" $compose_cmd $profile_flag up -d >> "$LOG_FILE" 2>&1; then
-            warn "Permission issue detected during up. Falling back to Root Orchestration..."
-            $compose_cmd $profile_flag up -d >> "$LOG_FILE" 2>&1 || error "Orchestration failed."
-        fi
+        $compose_cmd $profile_flag pull >> "$LOG_FILE" 2>&1 \
+            || warn "Image pull failed — continuing with cached images."
+        $compose_cmd $profile_flag up -d >> "$LOG_FILE" 2>&1 \
+            || error "Orchestration failed. Check $LOG_FILE"
     fi
 }
 

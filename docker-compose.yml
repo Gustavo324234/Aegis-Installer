@@ -20,7 +20,7 @@ services:
               capabilities: [ gpu ]
     environment:
       - RUST_LOG=info
-      - AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:-default_root_key}
+      - "AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:?FATAL: AEGIS_ROOT_KEY is not set. Run the installer first.}"
       - AEGIS_WHISPER_MODEL=${AEGIS_WHISPER_MODEL:-ggml-base.bin}
     volumes:
       - ./users:/app/users

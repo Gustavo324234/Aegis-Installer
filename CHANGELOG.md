@@ -8,6 +8,13 @@
     - Implementado Pre-flight RAM Check: Advertencia interactiva OOMKill (`dialog --yesno`) si RAM < 2000MB y se elige compilación local.
     - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
+### Fixed
+- **[INST-112] Smart Profiles + Systemd Hardening Fusion**:
+    - Fixed `aegis` user missing in docker group to ensure valid volume permissions.
+    - Updated `aegis.service` to `ProtectSystem=full` and added Docker socket to `ReadWritePaths`.
+    - Removed `sudo -u` wrappers in `orchestrate()` and `setup_workspace()` when already running as unprivileged user via systemd.
+    - Used `:?` operator in `docker-compose.yml` to remove `AEGIS_ROOT_KEY` fallback, ensuring a visible error if unset.
+
 ### Security
 - **[INST-STB-019] Unprivileged Service Account & Systemd Hardening**:
     - Added `create_aegis_user()` phase (phase 6): creates a dedicated `aegis` system user (`--system --no-create-home --shell /sbin/nologin`) idempotently via `id -u` check before calling `useradd`.
