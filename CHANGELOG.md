@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 ### Added
+- **[INST-113] UX Progress Feedback in TUI Mode**:
+    - Reemplazados diálogos silenciosos bloqueantes y agregadas barras de estado (`infobox`) detalladas en las fases críticas (Dependencies, Workspace, Orchestration).
+    - Mejorada interactividad y visibilidad en tiempo real para procesos lentos (`apt-get`, `git clone`, `docker pull`).
+    - Eliminado el bloqueo interactivo (`msgbox`) tras la fase de clonación de repositorio, asegurando un progreso ininterrumpido.
 - **[INST-112] Smart Profiles Bootstrapper (OOM-Safe)**:
     - Añadidas etiquetas `image` en `docker-compose.yml` apuntando a `ghcr.io/gustavo324234/aegis-ank:latest` y `aegis-shell:latest`.
     - Refactorizado el menú de `install_aegis.sh` para incluir 3 perfiles de orquestación (Cloud/Edge, Local Monolith, Hybrid GPU).
@@ -9,6 +13,9 @@
     - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
 ### Fixed
+- **[INST-113] ShellCheck Warnings Resolution**:
+    - Solucionado SC2129 empleando un bloque bash para agrupación de redirecciones stdout/stderr.
+    - Resuelto SC2086 mediante el uso de bash arrays fuertes para variables con comillas simples (args de Docker Compose).
 - **[INST-112] Smart Profiles + Systemd Hardening Fusion**:
     - Fixed `aegis` user missing in docker group to ensure valid volume permissions.
     - Updated `aegis.service` to `ProtectSystem=full` and added Docker socket to `ReadWritePaths`.
