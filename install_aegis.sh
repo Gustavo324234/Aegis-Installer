@@ -164,52 +164,44 @@ install_dependencies() {
 # 3. Interactive Profile Selection
 configure_profiles() {
     if [ "$USE_TUI" = false ]; then
-        log "Scripted Mode: Using default profiles (Microkernel / Web UI)."
+        log "Scripted Mode: Using default profiles (Cloud/Edge + Web UI)."
         return
     fi
 
-    log "Awaiting user input via TTY Redirection..."
-
-    # Zero-Error TTY Redirection
-    exec 3>&1
+    log "Select deployment profile..."
 
     local ram_mb
     ram_mb=$(free -m | awk '/^Mem:/{print $2}')
 
-    while true; do
-        HW_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
-            --backtitle "Aegis Neural Kernel Deployment" \
-            --menu "Select Orchestration Profile:" 15 75 3 \
-            "1" "Cloud/Edge (Download GHCR Images - < 2GB RAM)" \
-            "2" "Local Monolith (Build from source - High RAM/CPU)" \
-            "3" "Hybrid GPU (Download Images + NVIDIA Runtime)" \
-            2>&1 1>&3) || HW_PROFILE="1"
+    HW_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
+        --backtitle "Aegis Neural Kernel Deployment" \
+        --menu "Select Orchestration Profile:" 15 75 3 \
+        "1" "Cloud/Edge (Download GHCR Images - recommended)" \
+        "2" "Local Monolith (Build from source - needs 8GB+ RAM)" \
+        "3" "Hybrid GPU (Download Images + NVIDIA Runtime)" \
+        3>&1 1>&2 2>&3) || HW_PROFILE="1"
 
-        if [ "${ram_mb:-2048}" -lt 2000 ] && [ "$HW_PROFILE" = "2" ]; then
-            if ! dialog --clear --title "OOMKill Warning" --yesno "WARNING: Your system has ${ram_mb}MB RAM (< 2000MB).\nBuilding from source (Profile 2) will likely cause an OOMKill.\n\nContinue anyway?" 10 60; then
-                continue
-            fi
-        fi
-        break
-    done
+    if [ "${ram_mb:-2048}" -lt 2000 ] && [ "$HW_PROFILE" = "2" ]; then
+        dialog --clear --title "OOMKill Warning" \
+            --msgbox "WARNING: Only ${ram_mb}MB RAM detected.\nBuilding from source will likely cause an OOMKill.\nSwitching to Cloud/Edge profile." \
+            8 60
+        HW_PROFILE="1"
+    fi
 
     UI_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
         --backtitle "Aegis Neural Kernel Deployment" \
-        --menu "Select Interface Profile:" 15 65 2 \
-        "1" "Aegis Shell (Standard Cyber-Minimalist UI)" \
-        "2" "Headless (Kernel Only - gRPC Raw Access)" \
-        2>&1 1>&3) || UI_PROFILE="1"
+        --menu "Select Interface Profile:" 12 65 2 \
+        "1" "Aegis Shell (Full stack — kernel + web UI)" \
+        "2" "Headless (Kernel only — gRPC access)" \
+        3>&1 1>&2 2>&3) || UI_PROFILE="1"
 
-    exec 3>&-
-
-    # Map profile to internal flags
-    if [ "$HW_PROFILE" == "2" ]; then
+    if [ "$HW_PROFILE" = "2" ]; then
         SELECTED_FEATURES="full_local"
     else
         SELECTED_FEATURES=""
     fi
 
-    if [ "$UI_PROFILE" == "2" ]; then
+    if [ "$UI_PROFILE" = "2" ]; then
         SELECTED_UI="headless"
     else
         SELECTED_UI="web"

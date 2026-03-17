@@ -13,6 +13,9 @@
     - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
 ### Fixed
+- **[INST-114] Dialog File Descriptor Pattern on Debian**:
+    - Reemplazado el patrón `exec 3>&1 / 2>&1 1>&3` por la variante portátil `3>&1 1>&2 2>&3` para garantizar la captura del estado de `dialog` en Debian.
+    - Simplificado el `OOMKill Warning` para utilizar `msgbox` con fallback automático al perfil Cloud/Edge evitando bucles problemáticos.
 - **[INST-113] ShellCheck Warnings Resolution**:
     - Solucionado SC2129 empleando un bloque bash para agrupación de redirecciones stdout/stderr.
     - Resuelto SC2086 mediante el uso de bash arrays fuertes para variables con comillas simples (args de Docker Compose).
