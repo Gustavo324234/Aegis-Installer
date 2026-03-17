@@ -14,6 +14,8 @@
 
 ### Fixed
 - **[INST-114] Dialog File Descriptor Pattern on Debian**:
+    - Añadido `set +e` / `set -e` alrededor de comandos `dialog` para prevenir fallos por `set -euo pipefail` (errexit) al recibir códigos de salida distintos de cero de `dialog`.
+    - Asignación de valores por defecto mediante Parameter Expansion (`${VAR:-1}`) para `HW_PROFILE` y `UI_PROFILE` previniendo errores por variables no definidas.
     - Reemplazado el patrón `exec 3>&1 / 2>&1 1>&3` por la variante portátil `3>&1 1>&2 2>&3` para garantizar la captura del estado de `dialog` en Debian.
     - Simplificado el `OOMKill Warning` para utilizar `msgbox` con fallback automático al perfil Cloud/Edge evitando bucles problemáticos.
 - **[INST-113] ShellCheck Warnings Resolution**:
