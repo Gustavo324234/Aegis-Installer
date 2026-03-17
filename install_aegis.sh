@@ -57,7 +57,9 @@ warn()    { echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "$
 error() { 
     echo -e "[ERROR] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
     if [ "$USE_TUI" = true ] && command -v dialog &> /dev/null && [ -t 0 ]; then
+        set +e
         dialog --title "CRITICAL ERROR" --msgbox "$1" 10 60 --clear
+        set -e
     else
         echo -e "${RED}[ERROR]${NC} $1" >&2
     fi
@@ -113,7 +115,9 @@ check_system_requirements() {
             report+="[WARNING] Low RAM detected. Installation might be unstable."
         fi
 
+        set +e
         dialog --title "Aegis System Audit" --msgbox "$report" 15 60 --clear
+        set -e
     else
         echo "----------------------------------------------------------------"
         printf "| %-20s | %-35s |\n" "REQ" "STATUS"
@@ -173,27 +177,35 @@ configure_profiles() {
     local ram_mb
     ram_mb=$(free -m | awk '/^Mem:/{print $2}')
 
+    set +e
     HW_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
         --backtitle "Aegis Neural Kernel Deployment" \
         --menu "Select Orchestration Profile:" 15 75 3 \
         "1" "Cloud/Edge (Download GHCR Images - recommended)" \
         "2" "Local Monolith (Build from source - needs 8GB+ RAM)" \
         "3" "Hybrid GPU (Download Images + NVIDIA Runtime)" \
-        3>&1 1>&2 2>&3) || HW_PROFILE="1"
+        3>&1 1>&2 2>&3)
+    set -e
+    HW_PROFILE="${HW_PROFILE:-1}"
 
     if [ "${ram_mb:-2048}" -lt 2000 ] && [ "$HW_PROFILE" = "2" ]; then
+        set +e
         dialog --clear --title "OOMKill Warning" \
             --msgbox "WARNING: Only ${ram_mb}MB RAM detected.\nBuilding from source will likely cause an OOMKill.\nSwitching to Cloud/Edge profile." \
             8 60
+        set -e
         HW_PROFILE="1"
     fi
 
+    set +e
     UI_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
         --backtitle "Aegis Neural Kernel Deployment" \
         --menu "Select Interface Profile:" 12 65 2 \
         "1" "Aegis Shell (Full stack — kernel + web UI)" \
         "2" "Headless (Kernel only — gRPC access)" \
-        3>&1 1>&2 2>&3) || UI_PROFILE="1"
+        3>&1 1>&2 2>&3)
+    set -e
+    UI_PROFILE="${UI_PROFILE:-1}"
 
     if [ "$HW_PROFILE" = "2" ]; then
         SELECTED_FEATURES="full_local"
@@ -362,7 +374,9 @@ print_success() {
     fi
 
     if [ "$USE_TUI" = true ]; then
+        set +e
         dialog --title "DESPLIEGUE EXITOSO" --msgbox "$msg" 15 60 --clear
+        set -e
         clear
     fi
 
