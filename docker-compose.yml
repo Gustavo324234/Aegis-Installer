@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   ank-server:
     image: ghcr.io/gustavo324234/aegis-ank:latest
@@ -10,14 +8,35 @@ services:
         FEATURES: ${AEGIS_FEATURES:-}
     container_name: aegis-ank
     restart: unless-stopped
-    # Habilitamos el soporte para aceleración de decodificación y LLMs vía NVIDIA
+    environment:
+      - RUST_LOG=info
+      - "AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:?FATAL: AEGIS_ROOT_KEY is not set. Run the installer first.}"
+      - AEGIS_WHISPER_MODEL=${AEGIS_WHISPER_MODEL:-ggml-base.bin}
+    volumes:
+      - ./users:/app/users
+      - ./models:/app/models
+    networks:
+      - aegis_net
+    expose:
+      - "50051"
+
+  ank-server-gpu:
+    image: ghcr.io/gustavo324234/aegis-ank:latest
+    build:
+      context: ../Aegis-ANK
+      dockerfile: Dockerfile
+      args:
+        FEATURES: ${AEGIS_FEATURES:-}
+    container_name: aegis-ank
+    profiles: ["gpu"]
+    restart: unless-stopped
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [ gpu ]
+              capabilities: [gpu]
     environment:
       - RUST_LOG=info
       - "AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:?FATAL: AEGIS_ROOT_KEY is not set. Run the installer first.}"

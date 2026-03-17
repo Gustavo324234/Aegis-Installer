@@ -10,7 +10,7 @@ chmod 666 "$LOG_FILE" 2>/dev/null || true
 # ==============================================================================
 # OS: Ubuntu / Debian / Linux
 # Author: Antigravity SRE Team
-# Ticket: INST-109
+# Tickets: INST-109, INST-112, INST-113, INST-114
 # ==============================================================================
 
 set -euo pipefail
@@ -45,7 +45,7 @@ print_banner() {
   \_| |_\____/ \____/\___/\____/   \___/\____/
 EOF
     echo -e "${NC}"
-    echo -e "      Aegis OS Professional Bootstrapper - v1.4.2"
+    echo -e "      Aegis OS Professional Bootstrapper - v1.4.3"
     echo -e "------------------------------------------------------------"
 }
 
@@ -54,7 +54,7 @@ log()     { echo -e "[INFO] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "$
 success() { echo -e "[OK]   $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${GREEN}  ✓${NC} $1"; }
 warn()    { echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${YELLOW}  ⚠${NC} $1"; }
 
-error() { 
+error() {
     echo -e "[ERROR] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
     if [ "$USE_TUI" = true ] && command -v dialog &> /dev/null && [ -t 0 ]; then
         set +e
@@ -63,7 +63,7 @@ error() {
     else
         echo -e "${RED}[ERROR]${NC} $1" >&2
     fi
-    exit 1 
+    exit 1
 }
 
 # --- Argument Parsing ---
@@ -83,7 +83,7 @@ fi
 check_system_requirements() {
     [ "$USE_TUI" = true ] && clear
     log "Performing System Audit..."
-    
+
     local cpu_cores
     cpu_cores=$(nproc)
     local ram_gb
@@ -91,28 +91,26 @@ check_system_requirements() {
     local docker_status
     docker_status=$(command -v docker &> /dev/null && echo "INSTALLED" || echo "MISSING")
     local nvidia_status="NOT DETECTED"
-    
+
     if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
         nvidia_status=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -n 1)
     fi
 
     if [ "$USE_TUI" = true ]; then
-        # Check if dialog is missing and install it first
         if ! command -v dialog &> /dev/null; then
-            log "Installing 'dialog' for enhanced TUI experience..."
+            log "Installing 'dialog'..."
             apt-get update -qq >> "$LOG_FILE" 2>&1
             apt-get install -y dialog -qq >> "$LOG_FILE" 2>&1
         fi
 
-        # Pre-flight report in a dialog box
         local report="System Audit Results:\n\n"
         report+="CPU Cores:    $cpu_cores\n"
         report+="Total RAM:    ${ram_gb}GB\n"
         report+="Docker:       $docker_status\n"
         report+="GPU:          $nvidia_status\n\n"
-        
+
         if [ "$ram_gb" -lt 2 ]; then
-            report+="[WARNING] Low RAM detected. Installation might be unstable."
+            report+="[WARNING] Low RAM detected. Use Cloud/Edge profile."
         fi
 
         set +e
@@ -129,7 +127,6 @@ check_system_requirements() {
         echo "----------------------------------------------------------------"
     fi
 
-    # Root Check
     if [ "$EUID" -ne 0 ]; then
         error "Access Denied: Aegis Bootstrapper requires root/sudo privileges."
     fi
@@ -138,31 +135,33 @@ check_system_requirements() {
 # 2. Self-Healing Dependencies
 install_dependencies() {
     log "Synchronizing base dependencies..."
-    
+
     apt-get update -qq >> "$LOG_FILE" 2>&1
     local basic_deps=("git" "curl" "dialog" "openssl")
     for dep in "${basic_deps[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
+            log "Installing $dep..."
             apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
         fi
     done
 
-    # Docker
     if ! command -v docker &> /dev/null; then
-        log "Installing Docker Engine (Native Pipeline)..."
+        log "Installing Docker Engine (this may take 2-3 minutes)..."
         curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
         systemctl enable --now docker >> "$LOG_FILE" 2>&1
     fi
 
-    # Docker Compose V2
     if ! docker compose version &> /dev/null; then
-        log "Installing Docker Compose Plugin..."
+        log "Installing Docker Compose plugin..."
         apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1 || {
             warn "Apt plugin failed, falling back to standalone..."
-            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose >> "$LOG_FILE" 2>&1
+            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+                -o /usr/local/bin/docker-compose >> "$LOG_FILE" 2>&1
             chmod +x /usr/local/bin/docker-compose
         }
     fi
+
+    success "All dependencies ready."
 }
 
 # 3. Interactive Profile Selection
@@ -230,21 +229,23 @@ setup_workspace() {
     } >> "$LOG_FILE" 2>&1
 
     for repo in "${REPOS[@]}"; do
-        if [ -d "$repo" ]; then
+        if [ -d "$INSTALL_ROOT/$repo" ]; then
             log "Syncing $repo..."
-            bash -c "cd $repo && git pull -q" >> "$LOG_FILE" 2>&1
+            git -C "$INSTALL_ROOT/$repo" pull -q >> "$LOG_FILE" 2>&1
         else
             log "Cloning $repo..."
-            git clone -q "$REPO_BASE/$repo.git" >> "$LOG_FILE" 2>&1
+            git clone -q "$REPO_BASE/$repo.git" "$INSTALL_ROOT/$repo" >> "$LOG_FILE" 2>&1
         fi
     done
+
+    success "Repositories synchronized."
 }
 
 # 5. Citadel Security Guard
 security_guard() {
     log "Hardening Citadel Protocol security..."
     ENV_PATH="$INSTALL_ROOT/Aegis-Installer/.env"
-    
+
     if [ ! -f "$ENV_PATH" ]; then
         local root_key
         root_key=$(openssl rand -hex 32)
@@ -256,7 +257,8 @@ EOT
         chmod 600 "$ENV_PATH"
         success "Zero-Touch: Root cryptographic key secured."
     else
-        sed -i "s/^AEGIS_FEATURES=.*/AEGIS_FEATURES=$SELECTED_FEATURES/" "$ENV_PATH" || echo "AEGIS_FEATURES=$SELECTED_FEATURES" >> "$ENV_PATH"
+        sed -i "s/^AEGIS_FEATURES=.*/AEGIS_FEATURES=$SELECTED_FEATURES/" "$ENV_PATH" \
+            || echo "AEGIS_FEATURES=$SELECTED_FEATURES" >> "$ENV_PATH"
         success "Citadel Credentials validated."
     fi
 }
@@ -273,7 +275,6 @@ create_aegis_user() {
         success "System user 'aegis' created."
     fi
 
-    # Add aegis to docker group so it can manage containers
     if ! getent group docker &> /dev/null; then
         groupadd docker >> "$LOG_FILE" 2>&1 || true
     fi
@@ -304,7 +305,7 @@ ExecStart=/bin/bash /opt/aegis/Aegis-Installer/install_aegis.sh --no-tui
 StandardOutput=journal
 StandardError=journal
 
-# Systemd hardening — defense in depth without breaking Docker volumes
+# Systemd hardening
 NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
@@ -320,7 +321,7 @@ UNIT
     if ! systemctl daemon-reload >> "$LOG_FILE" 2>&1; then
         warn "systemctl daemon-reload failed — systemd may not be running in this environment."
     else
-        success "Systemd unit installed and daemon reloaded: $unit_file"
+        success "Systemd unit installed and daemon reloaded."
     fi
 }
 
@@ -328,46 +329,53 @@ UNIT
 orchestrate() {
     log "Initializing Docker Orchestrator..."
     cd "$INSTALL_ROOT/Aegis-Installer" >> "$LOG_FILE" 2>&1
-    
+
     local compose_cmd=("docker" "compose")
     docker compose version &> /dev/null || compose_cmd=("docker-compose")
 
-    local profile_flag=()
-    if [ "$SELECTED_UI" == "web" ]; then
-        profile_flag=("--profile" "frontend")
+    # Build profile flags
+    local profile_flags=()
+    if [ "$SELECTED_UI" = "web" ]; then
+        profile_flags+=("--profile" "frontend")
+    fi
+    if [ "$HW_PROFILE" = "3" ]; then
+        profile_flags+=("--profile" "gpu")
     fi
 
-    # Pre-create volume directories with correct ownership before Docker tries
+    # Pre-create volume directories
     mkdir -p "$INSTALL_ROOT/Aegis-Installer/users" \
              "$INSTALL_ROOT/Aegis-Installer/models" >> "$LOG_FILE" 2>&1
     chown aegis:aegis "$INSTALL_ROOT/Aegis-Installer/users" \
                       "$INSTALL_ROOT/Aegis-Installer/models" 2>/dev/null || true
 
-    log "Executing deployment plan (profile: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
+    log "Executing deployment plan (ui: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
+    log "Pulling Docker images — this may take several minutes on first run..."
 
     if [ "$HW_PROFILE" = "2" ]; then
-        "${compose_cmd[@]}" "${profile_flag[@]}" up -d --build >> "$LOG_FILE" 2>&1 \
+        "${compose_cmd[@]}" "${profile_flags[@]}" up -d --build >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
     else
-        "${compose_cmd[@]}" "${profile_flag[@]}" pull >> "$LOG_FILE" 2>&1 \
+        "${compose_cmd[@]}" "${profile_flags[@]}" pull >> "$LOG_FILE" 2>&1 \
             || warn "Image pull failed — continuing with cached images."
-        "${compose_cmd[@]}" "${profile_flag[@]}" up -d >> "$LOG_FILE" 2>&1 \
+        log "Starting containers..."
+        "${compose_cmd[@]}" "${profile_flags[@]}" up -d >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
     fi
+
+    success "Containers started."
 }
 
 # 9. Final Success Screen
 print_success() {
-    [ "$USE_TUI" = true ] && clear
-    SERVER_IP=$(curl -s --connect-timeout 2 https://ifconfig.me || echo "localhost")
+    SERVER_IP=$(curl -s --connect-timeout 2 https://ifconfig.me 2>/dev/null || echo "localhost")
     local msg="\n"
     msg+="AEGIS OS - DEPLOYMENT COMPLETED\n"
     msg+="-----------------------------------\n"
     msg+="Status:       READY\n"
     msg+="User:         $INVOKING_USER\n"
     msg+="Root Key:     [SECURED]\n"
-    
-    if [ "$SELECTED_UI" == "web" ]; then
+
+    if [ "$SELECTED_UI" = "web" ]; then
         msg+="Nexus URL:    http://$SERVER_IP:8000\n"
     else
         msg+="Mode:         Headless (gRPC on port 50051)\n"
@@ -375,7 +383,7 @@ print_success() {
 
     if [ "$USE_TUI" = true ]; then
         set +e
-        dialog --title "DESPLIEGUE EXITOSO" --msgbox "$msg" 15 60 --clear
+        dialog --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 15 60 --clear
         set -e
         clear
     fi
