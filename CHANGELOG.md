@@ -1,5 +1,29 @@
 # Changelog
- 
+
+## [Unreleased]
+### Added
+- **[INST-112] Smart Profiles Bootstrapper (OOM-Safe)**:
+    - Añadidas etiquetas `image` en `docker-compose.yml` apuntando a `ghcr.io/gustavo324234/aegis-ank:latest` y `aegis-shell:latest`.
+    - Refactorizado el menú de `install_aegis.sh` para incluir 3 perfiles de orquestación (Cloud/Edge, Local Monolith, Hybrid GPU).
+    - Implementado Pre-flight RAM Check: Advertencia interactiva OOMKill (`dialog --yesno`) si RAM < 2000MB y se elige compilación local.
+    - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
+
+### Fixed
+- **[INST-112] Smart Profiles + Systemd Hardening Fusion**:
+    - Fixed `aegis` user missing in docker group to ensure valid volume permissions.
+    - Updated `aegis.service` to `ProtectSystem=full` and added Docker socket to `ReadWritePaths`.
+    - Removed `sudo -u` wrappers in `orchestrate()` and `setup_workspace()` when already running as unprivileged user via systemd.
+    - Used `:?` operator in `docker-compose.yml` to remove `AEGIS_ROOT_KEY` fallback, ensuring a visible error if unset.
+
+### Security
+- **[INST-STB-019] Unprivileged Service Account & Systemd Hardening**:
+    - Added `create_aegis_user()` phase (phase 6): creates a dedicated `aegis` system user (`--system --no-create-home --shell /sbin/nologin`) idempotently via `id -u` check before calling `useradd`.
+    - Added `install_systemd_service()` phase (phase 7): writes `/etc/systemd/system/aegis.service` with `User=aegis`, `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true`, and `ReadWritePaths=/opt/aegis /tmp`; gracefully degrades if systemd is not running.
+    - Fixed `set -eo pipefail` → `set -euo pipefail` to enforce strict unbound-variable detection (SRE Law 2).
+    - Initialized `SELECTED_FEATURES` and `SELECTED_UI` at global scope to satisfy `set -u` in scripted/headless mode.
+    - Resolved ShellCheck SC2155 violations (declare-then-assign) in `check_system_requirements` and `security_guard`.
+    - Removed unused variables `FORCE_ROOT_ORCHESTRATION` and `MAGENTA` (SC2034).
+
 ## [1.4.3] - 2026-03-15
 ### Fixed
 - **[INST-109] Zero-Touch Log Permission Fix**:
