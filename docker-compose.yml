@@ -16,7 +16,7 @@ services:
     volumes:
       - ./users:/app/users
       - ./models:/app/models
-      - ank-data:/app
+      - ank-data:/app/data
     networks:
       - aegis_net
     expose:
@@ -47,7 +47,7 @@ services:
     volumes:
       - ./users:/app/users
       - ./models:/app/models
-      - ank-data:/app
+      - ank-data:/app/data
     networks:
       - aegis_net
     expose:
