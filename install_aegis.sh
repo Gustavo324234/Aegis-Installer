@@ -367,7 +367,16 @@ orchestrate() {
 
 # 9. Final Success Screen
 print_success() {
-    SERVER_IP=$(curl -s --connect-timeout 2 https://ifconfig.me 2>/dev/null || echo "localhost")
+    # Get the primary local network IP (the interface used for the default route)
+    SERVER_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' | head -n1)
+
+    # Fallback chain: hostname -I → localhost
+    if [ -z "$SERVER_IP" ]; then
+        SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    fi
+    if [ -z "$SERVER_IP" ]; then
+        SERVER_IP="localhost"
+    fi
     local msg="\n"
     msg+="AEGIS OS - DEPLOYMENT COMPLETED\n"
     msg+="-----------------------------------\n"

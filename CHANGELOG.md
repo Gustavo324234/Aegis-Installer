@@ -13,6 +13,10 @@
     - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
 ### Fixed
+- **[INST-115] LAN IP Detection in Success Screen**:
+    - Reemplazada la llamada a `ifconfig.me` por una detección local robusta usando `ip route get`.
+    - Implementado fallback escalonado: `ip route` → `hostname -I` → `localhost`.
+    - Mejora de privacidad eliminando la exposición de la IP pública en la terminal y soporte para instalaciones offline.
 - **[INST-114] Dialog File Descriptor Pattern on Debian**:
     - Añadido `set +e` / `set -e` alrededor de comandos `dialog` para prevenir fallos por `set -euo pipefail` (errexit) al recibir códigos de salida distintos de cero de `dialog`.
     - Asignación de valores por defecto mediante Parameter Expansion (`${VAR:-1}`) para `HW_PROFILE` y `UI_PROFILE` previniendo errores por variables no definidas.

@@ -8,6 +8,7 @@ services:
         FEATURES: ${AEGIS_FEATURES:-}
     container_name: aegis-ank
     restart: unless-stopped
+    user: "0"
     environment:
       - RUST_LOG=info
       - "AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:?FATAL: AEGIS_ROOT_KEY is not set. Run the installer first.}"
@@ -15,6 +16,7 @@ services:
     volumes:
       - ./users:/app/users
       - ./models:/app/models
+      - ank-data:/app
     networks:
       - aegis_net
     expose:
@@ -30,6 +32,7 @@ services:
     container_name: aegis-ank
     profiles: ["gpu"]
     restart: unless-stopped
+    user: "0"
     deploy:
       resources:
         reservations:
@@ -44,6 +47,7 @@ services:
     volumes:
       - ./users:/app/users
       - ./models:/app/models
+      - ank-data:/app
     networks:
       - aegis_net
     expose:
@@ -65,6 +69,9 @@ services:
       - ank-server
     networks:
       - aegis_net
+
+volumes:
+  ank-data:
 
 networks:
   aegis_net:
