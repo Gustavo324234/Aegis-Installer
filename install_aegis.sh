@@ -362,6 +362,39 @@ orchestrate() {
             || error "Orchestration failed. Check $LOG_FILE"
     fi
 
+    # Capture ANK install token and inject into .env for the BFF
+    log "Waiting for ANK to generate install token..."
+    local max_wait=30
+    local waited=0
+    local install_token=""
+
+    while [ "$waited" -lt "$max_wait" ]; do
+        install_token=$("${compose_cmd[@]}" logs ank-server 2>/dev/null \
+            | grep "INSTALL TOKEN" \
+            | awk -F'): ' '{print $NF}' \
+            | tr -d ' \r\n' \
+            | head -n1)
+
+        if [ -n "$install_token" ]; then
+            break
+        fi
+        sleep 2
+        waited=$((waited + 2))
+    done
+
+    if [ -n "$install_token" ]; then
+        # Remove old token if exists, write new one
+        sed -i '/^AEGIS_INSTALL_TOKEN=/d' "$ENV_PATH"
+        echo "AEGIS_INSTALL_TOKEN=$install_token" >> "$ENV_PATH"
+        success "Install token captured and saved to .env"
+
+        # Restart shell container to pick up the new env var
+        "${compose_cmd[@]}" "${profile_flags[@]}" restart aegis-shell >> "$LOG_FILE" 2>&1
+        success "Shell restarted with install token."
+    else
+        warn "Could not capture install token. Admin setup may require manual token entry."
+    fi
+
     success "Containers started."
 }
 

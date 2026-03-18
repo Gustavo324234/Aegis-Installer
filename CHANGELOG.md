@@ -13,6 +13,11 @@
     - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
 ### Fixed
+- **[INST-116] Capture ANK install token and inject into BFF**:
+    - Implementada captura automatizada del `INSTALL TOKEN` generado por el Kernel al inicio (extrayéndolo de los logs del contenedor `ank-server`).
+    - Inyectado dinámicamente el token en el archivo `.env` bajo la variable `AEGIS_INSTALL_TOKEN`.
+    - Agregado reinicio automático del contenedor `aegis-shell` en la fase de orquestación para asegurar que el BFF cargue el token inmediatamente.
+    - Sincronizado `docker-compose.yml` para propagar `${AEGIS_INSTALL_TOKEN}` como variable de entorno al servicio de la Shell.
 - **[INST-115] LAN IP Detection in Success Screen**:
     - Reemplazada la llamada a `ifconfig.me` por una detección local robusta usando `ip route get`.
     - Implementado fallback escalonado: `ip route` → `hostname -I` → `localhost`.
