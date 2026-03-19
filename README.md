@@ -43,11 +43,21 @@ This repository is the **installer and orchestrator**. It deploys the full Aegis
 
 Tested on Debian 11+, Ubuntu 20.04+. Requires `sudo`.
 
+### Recommended (Interactive TUI)
+For the professional bootstrapping experience with interactive menus:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh -o /tmp/aegis_install.sh && sudo bash /tmp/aegis_install.sh
+sudo bash <(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh)
 ```
 
-The script installs all dependencies (Docker, Docker Compose, git), clones the repos, generates secrets, and starts the stack. The interactive TUI will ask you two questions:
+### Scripted (Zero-Touch)
+For CI/CD or headless environments (Cloud/Edge + Web UI by default):
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh | sudo bash -s -- --no-tui
+```
+
+The script installs all dependencies (Docker, Docker Compose, git), clones the repos, generates secrets, and starts the stack. In TUI mode, it will ask:
 
 1. **Hardware profile** — Cloud/Edge (pull images from GHCR) or Local (build from source)
 2. **UI profile** — Full stack (kernel + shell) or Headless (kernel only)
@@ -264,7 +274,20 @@ sudo docker compose --profile frontend up -d --build
 
 ---
 
-## 9. Architecture
+## 9. Uninstall — Scrub Mode
+
+To completely remove Aegis OS (including all tenant databases, models, users, and system services), run the official uninstaller:
+
+```bash
+sudo bash <(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)
+```
+
+> [!CAUTION]
+> **Data Loss**: This action is irreversible. It wipes `/opt/aegis`, all Docker volumes (SQLCipher enclaves), and the `aegis` system user.
+
+---
+
+## 10. Architecture
 
 ```
 Aegis-Installer (this repo)
