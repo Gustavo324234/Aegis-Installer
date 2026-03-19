@@ -4,7 +4,7 @@
 **Repo:** Aegis-Installer
 **Files:** `install_aegis.sh`, `docker-compose.yml`
 **Priority:** CRITICAL
-**Status:** TODO
+**Status:** DONE
 
 ## Context
 
@@ -63,10 +63,10 @@ environment:
 
 ## Acceptance criteria
 
-- [ ] After installation, `.env` contains `AEGIS_INSTALL_TOKEN=<token>`
-- [ ] `aegis-shell` container has `AEGIS_INSTALL_TOKEN` env var set
-- [ ] Admin setup from browser works without manual token entry
-- [ ] `shellcheck install_aegis.sh` → 0 warnings
+- [x] After installation, `.env` contains `AEGIS_INSTALL_TOKEN=<token>`
+- [x] `aegis-shell` container has `AEGIS_INSTALL_TOKEN` env var set
+- [x] Admin setup from browser works without manual token entry
+- [x] `shellcheck install_aegis.sh` → 0 warnings
 
 ## Commit
 
