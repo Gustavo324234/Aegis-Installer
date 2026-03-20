@@ -418,9 +418,14 @@ print_success() {
         msg+="Mode:         Headless (gRPC on port 50051)\n"
     fi
 
+    if [ -n "$install_token" ]; then
+        msg+="Install Token: $install_token\n"
+        msg+="Instructions: Copy this token to the Setup Wizard in your browser.\n"
+    fi
+
     if [ "$USE_TUI" = true ]; then
         set +e
-        dialog --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 15 60 --clear
+        dialog --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 18 70 --clear
         set -e
         clear
     fi
@@ -429,6 +434,9 @@ print_success() {
     echo -e "${GREEN}#          AEGIS OS - DEPLOYMENT COMPLETED                      #${NC}"
     echo -e "${GREEN}################################################################${NC}"
     echo -e "$msg"
+    echo -e "----------------------------------------------------------------"
+    echo -e "${CYAN}SRE TIP:${NC} To uninstall everything, use:"
+    echo -e "${YELLOW}sudo bash <(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)${NC}"
 }
 
 # --- MAIN EXECUTION ---
