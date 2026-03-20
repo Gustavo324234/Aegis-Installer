@@ -418,11 +418,6 @@ print_success() {
         msg+="Mode:         Headless (gRPC on port 50051)\n"
     fi
 
-    if [ -n "$install_token" ]; then
-        msg+="Install Token: $install_token\n"
-        msg+="Instructions: Copy this token to the Setup Wizard in your browser.\n"
-    fi
-
     if [ "$USE_TUI" = true ]; then
         set +e
         dialog --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 18 70 --clear

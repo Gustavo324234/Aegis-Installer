@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 ### Added
+- **[ANK-INST-003] Redesign: Zero-friction onboarding — State-based setup:**
+    - Removed `install_token` display logic from the `print_success` screen.
+    - Simplified the bootstrapper by eliminating the need to capture or inject installation tokens.
+    - Fully decoupled the Installer from the Kernel's internal initialization state.
 - **[INST-113] UX Progress Feedback in TUI Mode**:
     - Reemplazados diálogos silenciosos bloqueantes y agregadas barras de estado (`infobox`) detalladas en las fases críticas (Dependencies, Workspace, Orchestration).
     - Mejorada interactividad y visibilidad en tiempo real para procesos lentos (`apt-get`, `git clone`, `docker pull`).
