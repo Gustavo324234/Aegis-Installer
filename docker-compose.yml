@@ -9,10 +9,10 @@ services:
     container_name: aegis-ank
     restart: unless-stopped
     user: "0"
+    env_file:
+      - .env
     environment:
       - RUST_LOG=info
-      - "AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:?FATAL: AEGIS_ROOT_KEY is not set. Run the installer first.}"
-      - AEGIS_WHISPER_MODEL=${AEGIS_WHISPER_MODEL:-ggml-base.bin}
     volumes:
       - ./users:/app/users
       - ./models:/app/models
@@ -40,10 +40,10 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    env_file:
+      - .env
     environment:
       - RUST_LOG=info
-      - "AEGIS_ROOT_KEY=${AEGIS_ROOT_KEY:?FATAL: AEGIS_ROOT_KEY is not set. Run the installer first.}"
-      - AEGIS_WHISPER_MODEL=${AEGIS_WHISPER_MODEL:-ggml-base.bin}
     volumes:
       - ./users:/app/users
       - ./models:/app/models
@@ -61,6 +61,8 @@ services:
     container_name: aegis-shell
     profiles: ["frontend"]
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
       - ANK_TARGET=ank-server:50051
     ports:
