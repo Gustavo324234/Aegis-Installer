@@ -10,7 +10,7 @@ chmod 666 "$LOG_FILE" 2>/dev/null || true
 # ==============================================================================
 # OS: Ubuntu / Debian / Linux
 # Author: Antigravity SRE Team
-# Tickets: INST-109, INST-112, INST-113, INST-114
+# Tickets: INST-109, INST-112, INST-113, INST-114, INST-119
 # ==============================================================================
 
 set -euo pipefail
@@ -46,7 +46,7 @@ print_banner() {
   \_| |_\____/ \____/\___/\____/   \___/\____/
 EOF
     echo -e "${NC}"
-    echo -e "      Aegis OS Professional Bootstrapper - v1.4.3"
+    echo -e "      Aegis OS Professional Bootstrapper - v1.4.4"
     echo -e "------------------------------------------------------------"
 }
 
@@ -360,8 +360,11 @@ orchestrate() {
     if [ "$SELECTED_UI" = "web" ]; then
         profile_flags+=("--profile" "frontend")
     fi
+    # INST-119: Hardware profile selection - CPU vs GPU
     if [ "$HW_PROFILE" = "3" ]; then
         profile_flags+=("--profile" "gpu")
+    else
+        profile_flags+=("--profile" "cpu")
     fi
 
     # Self-Healing: If new key, scrub old volumes to prevent SQLCipher hmac failure

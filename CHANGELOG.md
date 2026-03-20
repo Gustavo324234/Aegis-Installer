@@ -1,6 +1,15 @@
 # Changelog
 
+## [1.4.4] - 2026-03-20
+### Fixed
+- **[INST-119] Fix Container Name Conflict in GPU Profile**:
+    - Resolved critical orchestration failure where `ank-server` and `ank-server-gpu` services competed for the same `aegis-ank` container name.
+    - Added `profiles: ["cpu"]` to the standard `ank-server` service in `docker-compose.yml`.
+    - Updated `install_aegis.sh` to explicitly activate the `cpu` profile when GPU hardware is not selected (`HW_PROFILE != 3`).
+    - Ensured mutual exclusivity between CPU and GPU containers, preventing "container name already in use" errors during deployment.
+
 ## [Unreleased]
+
 ### Added
 - **[ANK-INST-003] Redesign: Zero-friction onboarding — State-based setup:**
     - Removed `install_token` display logic from the `print_success` screen.
