@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail  # INST-SEC-122: Strict mode
+
 # Aegis OS — Diagnostic Script
 # Corre esto en el servidor cuando algo no funciona
 # Uso: sudo bash aegis_diag.sh

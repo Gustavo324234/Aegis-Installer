@@ -1,15 +1,15 @@
 #!/bin/bash
 # ==============================================================================
-# AEGIS OS - OFFICIAL UNINSTALLER (SRE CLEAN SLATE) - v1.0.0
+# AEGIS OS - OFFICIAL UNINSTALLER (SRE CLEAN SLATE) - v1.0.1
 # ==============================================================================
 # OS: Ubuntu / Debian / Linux
 # Author: Antigravity SRE Team
-# Ticket: [INST-118]
+# Tickets: INST-118, INST-SEC-121, INST-SEC-123
 # Description: Removes all Aegis components, including containers, volumes, 
 #              database files (SQLCipher), system users, and systemd units.
 # ==============================================================================
 
-set -uo pipefail
+set -euo pipefail  # INST-SEC-121: Strict mode
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -41,15 +41,36 @@ success() { echo -e "${GREEN}  ✓${NC} $1"; }
 warn()    { echo -e "${YELLOW}  ⚠${NC} $1"; }
 error()   { echo -e "${RED}  ✗${NC} $1"; exit 1; }
 
+# INST-SEC-123: Confirmation before deletion
+confirm_deletion() {
+    echo -e "${RED}⚠️  CRITICAL WARNING ⚠️${NC}"
+    echo -e "This will DELETE ALL Aegis data including:"
+    echo -e "  - User workspaces in /opt/aegis/users/"
+    echo -e "  - Databases (SQLCipher encrypted)"
+    echo -e "  - Configuration files (.env)"
+    echo -e "  - Docker containers and volumes"
+    echo -e "  - System user 'aegis'"
+    echo ""
+    echo -e "${YELLOW}This action CANNOT be undone!${NC}"
+    echo ""
+    read -p "Type 'DELETE' (all caps) to confirm: " confirmation
+    
+    if [ "$confirmation" != "DELETE" ]; then
+        echo -e "${GREEN}Uninstall cancelled. No changes made.${NC}"
+        exit 0
+    fi
+    
+    echo -e "${RED}Proceeding with deletion...${NC}"
+    echo ""
+}
+
 # --- PRE-FLIGHT ---
 if [ "$EUID" -ne 0 ]; then
     error "Access Denied: Aegis Uninstaller requires root/sudo privileges."
 fi
 
 print_banner
-echo -e "${YELLOW}WARNING: This will permanently DELETE all Aegis data!${NC}"
-echo -e "         Containers, Volumes (Databases), and Secrets (/opt/aegis)."
-echo -e "------------------------------------------------------------"
+confirm_deletion
 
 # --- 1. Systemd Removal ---
 log "Stopping and disabling 'aegis.service'..."
@@ -71,7 +92,7 @@ log "Orchestrating container destruction..."
     # Try to use existing docker-compose.yml if present
     if [ -d "/opt/aegis/Aegis-Installer" ]; then
         cd /opt/aegis/Aegis-Installer
-        $compose_cmd --profile frontend down --volumes --rmi all 2>/dev/null || true
+        $compose_cmd --profile frontend --profile cpu --profile gpu down --volumes --rmi all 2>/dev/null || true
     fi
 
     # Force kill any remaining aegis containers
