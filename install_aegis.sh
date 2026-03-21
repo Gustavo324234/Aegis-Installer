@@ -10,7 +10,7 @@ chmod 666 "$LOG_FILE" 2>/dev/null || true
 # ==============================================================================
 # OS: Ubuntu / Debian / Linux
 # Author: Antigravity SRE Team
-# Tickets: INST-109, INST-112, INST-113, INST-114, INST-119
+# Tickets: INST-109, INST-112, INST-113, INST-114, INST-119, INST-SEC-120, INST-SEC-124
 # ==============================================================================
 
 set -euo pipefail
@@ -26,6 +26,12 @@ SELECTED_FEATURES=""
 SELECTED_UI="web"
 INVOKING_USER=${SUDO_USER:-$(whoami)}
 NEW_INSTALLATION=false
+
+# Docker Compose download config (INST-SEC-124)
+DOCKER_COMPOSE_VERSION="v2.24.0"
+DOCKER_COMPOSE_URL="https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-x86_64"
+# Official SHA256 checksum for docker-compose v2.24.0 linux-x86_64
+DOCKER_COMPOSE_SHA256="6d2d6c66b658a9ec68f67d8c7a97e78253ae04e4c7f08d5ed7a3a6e1e86e17cf"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -46,7 +52,7 @@ print_banner() {
   \_| |_\____/ \____/\___/\____/   \___/\____/
 EOF
     echo -e "${NC}"
-    echo -e "      Aegis OS Professional Bootstrapper - v1.4.4"
+    echo -e "      Aegis OS Professional Bootstrapper - v1.4.6"
     echo -e "------------------------------------------------------------"
 }
 
@@ -56,15 +62,63 @@ success() { echo -e "[OK]   $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "$
 warn()    { echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${YELLOW}  ⚠${NC} $1"; }
 
 error() {
+    # INST-SEC-120: Preserve and restore set -e state
+    local old_set=$-
+    set +e
+    
     echo -e "[ERROR] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"
     if [ "$USE_TUI" = true ] && command -v dialog &> /dev/null && [ -t 0 ]; then
-        set +e
         dialog --title "CRITICAL ERROR" --msgbox "$1" 10 60 --clear
-        set -e
     else
         echo -e "${RED}[ERROR]${NC} $1" >&2
     fi
+    
+    # Restore previous state
+    case $old_set in
+        *e*) set -e ;;
+    esac
+    
     exit 1
+}
+
+# INST-SEC-124: Download with retry and checksum verification
+download_with_verification() {
+    local url="$1"
+    local dest="$2"
+    local expected_sha256="$3"
+    local max_retries=3
+    local retry_delay=5
+    
+    for attempt in $(seq 1 $max_retries); do
+        log "Download attempt $attempt/$max_retries..."
+        
+        if curl -L --fail --silent --show-error "$url" -o "$dest" >> "$LOG_FILE" 2>&1; then
+            # Download successful, verify checksum
+            local actual_sha256
+            actual_sha256=$(sha256sum "$dest" | cut -d' ' -f1)
+            
+            if [ "$actual_sha256" = "$expected_sha256" ]; then
+                success "Download verified (SHA256: ${actual_sha256:0:16}...)"
+                return 0
+            else
+                warn "Checksum mismatch! Expected: $expected_sha256, Got: $actual_sha256"
+                rm -f "$dest"
+                
+                if [ $attempt -lt $max_retries ]; then
+                    log "Retrying in $retry_delay seconds..."
+                    sleep $retry_delay
+                fi
+            fi
+        else
+            warn "Download failed"
+            if [ $attempt -lt $max_retries ]; then
+                log "Retrying in $retry_delay seconds..."
+                sleep $retry_delay
+            fi
+        fi
+    done
+    
+    error "Failed to download and verify $url after $max_retries attempts"
 }
 
 # --- Argument Parsing ---
@@ -174,12 +228,17 @@ install_dependencies() {
 
     if ! docker compose version &> /dev/null; then
         log "Installing Docker Compose plugin..."
-        apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1 || {
-            warn "Apt plugin failed, falling back to standalone..."
-            curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
-                -o /usr/local/bin/docker-compose >> "$LOG_FILE" 2>&1
+        
+        # Try apt package first
+        if apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1; then
+            success "Docker Compose plugin installed via apt"
+        else
+            # INST-SEC-124: Fallback to standalone with checksum verification
+            warn "Apt plugin failed, downloading standalone Docker Compose with verification..."
+            download_with_verification "$DOCKER_COMPOSE_URL" "/usr/local/bin/docker-compose" "$DOCKER_COMPOSE_SHA256"
             chmod +x /usr/local/bin/docker-compose
-        }
+            success "Docker Compose standalone installed"
+        fi
     fi
 
     success "All dependencies ready."

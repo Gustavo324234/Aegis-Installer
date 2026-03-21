@@ -89,7 +89,8 @@ Never write `# TODO` in production scripts. If a task is too large, split it.
 6. On completion, deliver:
    - Updated `CHANGELOG.md` entry (Keep a Changelog format)
    - Updated `TICKETS_MASTER.md` in Aegis-Governance — sync ticket status
-   - Conventional Commit message: `fix(installer): description [TICKET-ID]`
+   - Report to Tavo that the ticket is ready for review.
+   ❌ DO NOT run git commit or git push.
 
 ---
 

@@ -131,3 +131,7 @@
     - **Aceleración C++ / CUDA**: La imagen del `ank-server` utiliza `nvidia/cuda:12.2.2` delegando compilación por layers y preparando el terreno nativo para llama.cpp y whisper.cpp.
     - **Privilegios Restringidos**: Contenedor del Kernel forzado en SRE isolation a través de la creación y switch a un usuario sin privilegios `aegis` (`useradd aegis`).
     - **Volúmenes y Env**: Configurado el almacenamiento persistente nativo para `/app/users` (bases de datos de enclave) y `/app/models`. Agregado baseline `.env.example`.
+
+### Added
+- **[INST-SEC-121] Shell Strict Mode Verification:**
+  - Added `test_scripts.py` to verify that all deployment and uninstallation scripts (`install_aegis.sh`, `uninstall_aegis.sh`) enforce `set -euo pipefail` to ensure atomic and fail-fast operations.
