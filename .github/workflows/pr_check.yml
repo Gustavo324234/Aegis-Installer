@@ -1,0 +1,87 @@
+name: SRE Firewall - Pull Request Guard (Installer)
+
+on:
+  push:
+    branches: [ "main", "dev" ]
+  pull_request:
+    branches: [ "main", "dev" ]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  format:
+    name: Code Formatting Check (Black)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install black
+      - name: Run Black Check
+        run: black --check .
+
+  lint:
+    name: Linting (Flake8 & ShellCheck)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          pip install flake8
+          sudo apt-get update && sudo apt-get install -y shellcheck
+      - name: Run Flake8
+        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      - name: Run ShellCheck
+        run: shellcheck *.sh
+
+  test:
+    name: Hardening Tests (Pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: pip install pytest
+      - name: Run Pytest
+        run: pytest .
+
+  security:
+    name: Security Vulnerability Scan (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: Install Bandit
+        run: pip install bandit
+      - name: Run Security Audit
+        run: bandit -r . -ll
+
+  automerge:
+    name: Auto-Merge (Solo Gustavo)
+    needs: [format, lint, test, security]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && (github.actor == 'Gustavo324234' || github.actor == 'Gus-Agost')
+    steps:
+      - name: Auto-Merge Pull Request
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$GITHUB_URL"
