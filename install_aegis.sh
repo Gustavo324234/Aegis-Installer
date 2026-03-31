@@ -57,9 +57,9 @@ EOF
 }
 
 # --- Helper Functions ---
-log()     { echo -e "[INFO] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${CYAN}  →${NC} $1"; }
-success() { echo -e "[OK]   $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${GREEN}  ✓${NC} $1"; }
-warn()    { echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${YELLOW}  ⚠${NC} $1"; }
+log()     { echo -e "[INFO] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${CYAN}  ->${NC} $1"; }
+success() { echo -e "[OK]   $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${GREEN}  [OK]${NC} $1"; }
+warn()    { echo -e "[WARN] $(date '+%H:%M:%S') - $1" >> "$LOG_FILE"; echo -e "${YELLOW}  [!]${NC} $1"; }
 
 error() {
     # INST-SEC-120: Preserve and restore set -e state
@@ -104,16 +104,16 @@ download_with_verification() {
                 warn "Checksum mismatch! Expected: $expected_sha256, Got: $actual_sha256"
                 rm -f "$dest"
                 
-                if [ $attempt -lt $max_retries ]; then
+                if [ "$attempt" -lt "$max_retries" ]; then
                     log "Retrying in $retry_delay seconds..."
-                    sleep $retry_delay
+                    sleep "$retry_delay"
                 fi
             fi
         else
             warn "Download failed"
-            if [ $attempt -lt $max_retries ]; then
+            if [ "$attempt" -lt "$max_retries" ]; then
                 log "Retrying in $retry_delay seconds..."
-                sleep $retry_delay
+                sleep "$retry_delay"
             fi
         fi
     done
@@ -280,8 +280,8 @@ configure_profiles() {
     UI_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
         --backtitle "Aegis Neural Kernel Deployment" \
         --menu "Select Interface Profile:" 12 65 2 \
-        "1" "Aegis Shell (Full stack — kernel + web UI)" \
-        "2" "Headless (Kernel only — gRPC access)" \
+        "1" "Aegis Shell (Full stack i¢->‚¬->€ kernel + web UI)" \
+        "2" "Headless (Kernel only i¢->‚¬->€ gRPC access)" \
         3>&1 1>&2 2>&3)
     set -e
     UI_PROFILE="${UI_PROFILE:-1}"
@@ -348,7 +348,7 @@ EOT
 create_aegis_user() {
     log "Provisioning unprivileged 'aegis' system user..."
     if id -u aegis &> /dev/null; then
-        log "User 'aegis' already exists — skipping creation."
+        log "User 'aegis' already exists - skipping creation."
     else
         if ! useradd --system --no-create-home --shell /sbin/nologin aegis >> "$LOG_FILE" 2>&1; then
             error "Failed to create system user 'aegis'."
@@ -400,7 +400,7 @@ UNIT
     chmod 644 "$unit_file"
 
     if ! systemctl daemon-reload >> "$LOG_FILE" 2>&1; then
-        warn "systemctl daemon-reload failed — systemd may not be running in this environment."
+        warn "systemctl daemon-reload failed - systemd may not be running in this environment."
     else
         success "Systemd unit installed and daemon reloaded."
     fi
@@ -428,7 +428,7 @@ orchestrate() {
 
     # Self-Healing: If new key, scrub old volumes to prevent SQLCipher hmac failure
     if [ "$NEW_INSTALLATION" = true ]; then
-        log "Fresh installation detected — scrubbing orphaned volumes..."
+        log "Fresh installation detected i¢->‚¬->€ scrubbing orphaned volumes..."
         "${compose_cmd[@]}" down --volumes 2>/dev/null || true
     fi
 
@@ -439,14 +439,14 @@ orchestrate() {
                       "$INSTALL_ROOT/Aegis-Installer/models" 2>/dev/null || true
 
     log "Executing deployment plan (ui: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
-    log "Pulling Docker images — this may take several minutes on first run..."
+    log "Pulling Docker images i¢->‚¬->€ this may take several minutes on first run..."
 
     if [ "$HW_PROFILE" = "2" ]; then
         "${compose_cmd[@]}" "${profile_flags[@]}" up -d --build >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
     else
         "${compose_cmd[@]}" "${profile_flags[@]}" pull >> "$LOG_FILE" 2>&1 \
-            || warn "Image pull failed — continuing with cached images."
+            || warn "Image pull failed i¢->‚¬->€ continuing with cached images."
         log "Starting containers..."
         "${compose_cmd[@]}" "${profile_flags[@]}" up -d >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
@@ -458,9 +458,7 @@ orchestrate() {
 # 9. Final Success Screen
 print_success() {
     # Get the primary local network IP (the interface used for the default route)
-    SERVER_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}' | head -n1)
-
-    # Fallback chain: hostname -I → localhost
+    # Fallback chain: hostname -I -> localhost
     if [ -z "$SERVER_IP" ]; then
         SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     fi

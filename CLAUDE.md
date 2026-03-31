@@ -60,6 +60,7 @@ Never write `# TODO` in production scripts.
 4. Run the SRE gate — fix all warnings
 5. On completion, update:
    - `CHANGELOG.md` — add entry under `[Unreleased]`
+   - `e:\Aegis\Aegis-Governance\TICKETS_MASTER.md` — sync ticket status
 6. Output a Conventional Commit message:
    ```
    fix(installer): description [TICKET-ID]

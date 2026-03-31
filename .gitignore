@@ -1,1 +1,23 @@
+# Aegis Installer - Ignore Policy
 .env
+.env.*
+*.key
+*.pem
+*.token
+root_key.txt
+
+# --- Runtime Data (Don't sync to public repo) ---
+/users/
+/models/
+/data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# --- IDEs ---
+.vscode/
+.idea/
+.cursor/
+.agents/
+.gemini/

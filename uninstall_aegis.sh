@@ -36,14 +36,14 @@ EOF
 }
 
 # --- Helper Functions ---
-log()     { echo -e "${CYAN}  →${NC} $1"; }
-success() { echo -e "${GREEN}  ✓${NC} $1"; }
-warn()    { echo -e "${YELLOW}  ⚠${NC} $1"; }
-error()   { echo -e "${RED}  ✗${NC} $1"; exit 1; }
+log()     { echo -e "${CYAN}  ->${NC} $1"; }
+success() { echo -e "${GREEN}  [OK]${NC} $1"; }
+warn()    { echo -e "${YELLOW}  [!]${NC} $1"; }
+error()   { echo -e "${RED}  [X]${NC} $1"; exit 1; }
 
 # INST-SEC-123: Confirmation before deletion
 confirm_deletion() {
-    echo -e "${RED}⚠️  CRITICAL WARNING ⚠️${NC}"
+    echo -e "${RED}i¢Å¡-> i¯->¸->  CRITICAL WARNING i¢Å¡-> i¯->¸->${NC}"
     echo -e "This will DELETE ALL Aegis data including:"
     echo -e "  - User workspaces in /opt/aegis/users/"
     echo -e "  - Databases (SQLCipher encrypted)"
@@ -53,7 +53,7 @@ confirm_deletion() {
     echo ""
     echo -e "${YELLOW}This action CANNOT be undone!${NC}"
     echo ""
-    read -p "Type 'DELETE' (all caps) to confirm: " confirmation
+    read -r -p "Type 'DELETE' (all caps) to confirm: " confirmation
     
     if [ "$confirmation" != "DELETE" ]; then
         echo -e "${GREEN}Uninstall cancelled. No changes made.${NC}"
