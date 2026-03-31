@@ -1,8 +1,8 @@
 #!/bin/bash
 # ==============================================================================
-# AEGIS OS — HOT-RELOAD SCRIPT (SRE GRADE)
+# AEGIS OS - HOT-RELOAD SCRIPT (SRE GRADE)
 # ==============================================================================
-# Ticket: INST-121 | Epic 24 — Dev Sync & Hot-Reload Toolchain
+# Ticket: INST-121 | Epic 24 - Dev Sync & Hot-Reload Toolchain
 # Runs on: Debian server
 # Installs to: /usr/local/bin/aegis_hotreload.sh
 # Usage: aegis_hotreload.sh [--repo ank|shell|installer|all] [--force-full]
@@ -86,6 +86,102 @@ reset_system() {
     success "Aegis reset to zero. System is in STATE_INITIALIZING."
 }
 
+# Functions for reload_ank and reload_shell must be defined before use if called by reset_system
+# but since they are called later, we should define them here.
+
+check_ank_health() {
+    log "Verifying ANK container status..."
+    if [[ $(docker inspect -f '{{.State.Running}}' aegis-ank 2>/dev/null) != "true" ]]; then
+        error_exit "aegis-ank is not running"
+    fi
+    
+    # Wait for the server to log that it started
+    local elapsed=0
+    while [[ $elapsed -lt "$ANK_TIMEOUT" ]]; do
+        if docker logs aegis-ank 2>&1 | grep -qE "Listening|ANK Initialized|Server started"; then
+            success "ANK Initialized and listening (${elapsed}s)"
+            return 0
+        fi
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+    warn "ANK log marker not found after ${ANK_TIMEOUT}s"
+    return 1
+}
+
+check_bff_health() {
+    log "Verifying BFF health (${BFF_HEALTH_URL})..."
+    local attempt
+    for attempt in $(seq 1 "$HEALTH_RETRIES"); do
+        if curl -s --connect-timeout 5 "$BFF_HEALTH_URL" 2>/dev/null | grep -qi "online"; then
+            success "BFF is healthy"
+            return 0
+        fi
+        [[ "$attempt" -lt "$HEALTH_RETRIES" ]] && sleep "$HEALTH_RETRY_DELAY"
+    done
+    warn "BFF health check failed. Last logs:" && docker logs aegis-shell --tail 20 2>&1 || true
+    return 1
+}
+
+reload_shell() {
+    log "Copying updated BFF files into container..."
+    docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/ || \
+        error_exit "Failed to copy BFF files to container"
+    
+    if [ -d "/home/diego/Documentos/Aegis/Aegis-Shell/ui/dist" ]; then
+        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
+    fi
+
+    if [ -f "/home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION" ]; then
+        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
+    fi
+    
+    success "BFF files updated in container"
+
+    log "Restarting aegis-shell..."
+    docker restart aegis-shell || error_exit "Failed to restart aegis-shell"
+    success "aegis-shell restarted"
+
+    check_bff_health || error_exit "aegis-shell restarted but health check failed"
+}
+
+reload_ank() {
+    log "Building ank-server from source (Ubuntu 22.04 container for glibc compatibility)..."
+    log "This will take 1-5 minutes depending on what changed..."
+
+    docker run --rm \
+        -v "${ANK_SRC_DIR}:/workspace" \
+        -w /workspace \
+        ubuntu:22.04 \
+        bash -c "
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq 2>/dev/null
+            apt-get install -y -qq curl build-essential pkg-config libssl-dev protobuf-compiler libsqlcipher-dev 2>/dev/null
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -q 2>/dev/null
+            source \$HOME/.cargo/env
+            cargo build --release -p ank-server 2>&1 | grep -E 'Compiling ank|Finished|error\[' || true
+        " || error_exit "Rust compilation failed inside Ubuntu 22.04 container"
+
+    success "Compilation complete"
+
+    log "Copying new binary to ank container..."
+    docker cp "${ANK_SRC_DIR}/target/release/ank-server" aegis-ank:/app/ank-server || \
+        error_exit "Failed to copy binary to container"
+
+    log "Restarting aegis-ank..."
+    docker restart aegis-ank || error_exit "Failed to restart aegis-ank"
+    success "aegis-ank restarted with new binary"
+
+    check_ank_health || error_exit "aegis-ank started but port $ANK_PORT never became available"
+}
+
+reload_full() {
+    log "Full reload: shell first, then ank..."
+    reload_shell
+    reload_ank
+}
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --repo)
@@ -125,111 +221,11 @@ check_dependencies() {
     fi
 }
 
-# --- Health Checks ---
-check_bff_health() {
-    log "Verifying BFF health (${BFF_HEALTH_URL})..."
-    local attempt
-    for attempt in $(seq 1 "$HEALTH_RETRIES"); do
-        if curl -s --connect-timeout 5 "$BFF_HEALTH_URL" 2>/dev/null | grep -qi "online"; then
-            success "BFF is healthy"
-            return 0
-        fi
-        [[ $attempt -lt $HEALTH_RETRIES ]] && sleep "$HEALTH_RETRY_DELAY"
-    done
-    warn "BFF health check failed. Last logs:" && docker logs aegis-shell --tail 20 2>&1 || true
-    return 1
-}
-
-check_ank_health() {
-    log "Verifying ANK container status..."
-    if [[ $(docker inspect -f '{{.State.Running}}' aegis-ank 2>/dev/null) != "true" ]]; then
-        error_exit "aegis-ank is not running"
-    fi
-    
-    # Wait for the server to log that it started
-    local elapsed=0
-    while [[ $elapsed -lt $ANK_TIMEOUT ]]; do
-        if docker logs aegis-ank 2>&1 | grep -qE "Listening|ANK Initialized|Server started"; then
-            success "ANK Initialized and listening (${elapsed}s)"
-            return 0
-        fi
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
-    warn "ANK log marker not found after ${ANK_TIMEOUT}s"
-    return 1
-}
-
-# --- Reload: Shell (Python BFF — instantáneo) ---
-reload_shell() {
-    log "Copying updated BFF files into container..."
-    # El rsync ya sincronizó los archivos en /home/diego/Documentos/Aegis/Aegis-Shell/
-    docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/ || \
-        error_exit "Failed to copy BFF files to container"
-    
-    # SH-UI: Copiar distribución compila de la UI
-    if [ -d "/home/diego/Documentos/Aegis/Aegis-Shell/ui/dist" ]; then
-        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
-    fi
-
-    # SH-VER: Copiar archivo de versión de sincronización si existe
-    if [ -f "/home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION" ]; then
-        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
-    fi
-    
-    success "BFF files updated in container"
-
-    log "Restarting aegis-shell..."
-    docker restart aegis-shell || error_exit "Failed to restart aegis-shell"
-    success "aegis-shell restarted"
-
-    check_bff_health || error_exit "aegis-shell restarted but health check failed"
-}
-
-# --- Reload: ANK (Rust — compila en Ubuntu 22.04 para compatibilidad con el container) ---
-reload_ank() {
-    log "Building ank-server from source (Ubuntu 22.04 container for glibc compatibility)..."
-    log "This will take 1-5 minutes depending on what changed..."
-
-    docker run --rm \
-        -v "${ANK_SRC_DIR}:/workspace" \
-        -w /workspace \
-        ubuntu:22.04 \
-        bash -c "
-            set -e
-            export DEBIAN_FRONTEND=noninteractive
-            apt-get update -qq 2>/dev/null
-            apt-get install -y -qq curl build-essential pkg-config libssl-dev protobuf-compiler libsqlcipher-dev 2>/dev/null
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -q 2>/dev/null
-            source \$HOME/.cargo/env
-            cargo build --release -p ank-server 2>&1 | grep -E 'Compiling ank|Finished|error\[' || true
-        " || error_exit "Rust compilation failed inside Ubuntu 22.04 container"
-
-    success "Compilation complete"
-
-    log "Copying new binary to ank container..."
-    docker cp "${ANK_SRC_DIR}/target/release/ank-server" aegis-ank:/app/ank-server || \
-        error_exit "Failed to copy binary to container"
-
-    log "Restarting aegis-ank..."
-    docker restart aegis-ank || error_exit "Failed to restart aegis-ank"
-    success "aegis-ank restarted with new binary"
-
-    check_ank_health || error_exit "aegis-ank started but port $ANK_PORT never became available"
-}
-
-# --- Reload: Full stack ---
-reload_full() {
-    log "Full reload: shell first, then ank..."
-    reload_shell
-    reload_ank
-}
-
 # --- Banner ---
 echo ""
-echo -e "${CYAN}══════════════════════════════════════════${NC}"
-echo -e "${CYAN}   AEGIS OS — HOT-RELOAD ENGINE           ${NC}"
-echo -e "${CYAN}══════════════════════════════════════════${NC}"
+echo -e "${CYAN}================================================================${NC}"
+echo -e "${CYAN}   AEGIS OS - HOT-RELOAD ENGINE           ${NC}"
+echo -e "${CYAN}================================================================${NC}"
 echo ""
 
 check_dependencies
@@ -253,7 +249,7 @@ fi
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
 echo ""
-echo -e "${GREEN}══════════════════════════════════════════${NC}"
+echo -e "${GREEN}================================================================${NC}"
 echo -e "${GREEN}   RELOAD COMPLETE in ${ELAPSED}s              ${NC}"
-echo -e "${GREEN}══════════════════════════════════════════${NC}"
+echo -e "${GREEN}================================================================${NC}"
 echo ""
