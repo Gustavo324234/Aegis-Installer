@@ -287,7 +287,16 @@ sudo bash <(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Inst
 
 ---
 
-## 10. Architecture
+## 10. Developer Workflow (Sync & Reset)
+
+For developers working between Windows and a remote Debian server, Aegis OS provides a specialized **DevSync Engine**. This tool allows for hot-reloading code and performing full system resets (Zero-Panic) with a single command.
+
+- **Sync Tool:** `.\aegis_sync.ps1`
+- **Full Guide:** See [DEVELOPER_WORKFLOW.md](DEVELOPER_WORKFLOW.md)
+
+---
+
+## 11. Architecture
 
 ```
 Aegis-Installer (this repo)

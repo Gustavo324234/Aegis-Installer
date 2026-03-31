@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.5.0] - 2026-03-25
+### Added
+- **[INST-121] Aegis DevSync — Server-Side Hot-Reload Script (Epic 24)**:
+    - Created `aegis_hotreload.sh` — SRE-grade Bash script for selective container reload on the Debian server.
+    - Supports `--repo ank|shell|installer|all` and `--force-full` flags for granular reload control.
+    - `--repo shell` → `docker restart aegis-shell` (~5s), `--repo ank` → incremental `docker compose build + up -d`.
+    - Post-reload health checks: BFF `/health` endpoint (10 retries) + ANK port 50051 availability (120s timeout).
+    - On health check failure, prints last 30 lines of container logs and exits non-zero.
+    - Timestamped logging `[HH:MM:SS] [INFO|OK|WARN|ERROR]` matching existing SRE script conventions.
+    - Idempotent execution — safe to run multiple times consecutively.
+    - Installed on server at `/usr/local/bin/aegis_hotreload.sh` with permissions `755`.
+    - `shellcheck` → 0 warnings.
+- **[INST-120] Aegis DevSync — Windows-to-Server Sync Script (Epic 24)**:
+    - Created `aegis_sync.ps1` — PowerShell script for rapid Windows → Debian file synchronization via rsync+SSH.
+    - Parameters: `-Repo` (all|ank|shell|installer), `-Server`, `-User`, `-KeyPath`, `-DryRun`.
+    - Multi-strategy rsync detection: native PATH → Git Bash → WSL, with actionable error messages if unavailable.
+    - Automatic path conversion for WSL (`/mnt/c/...`) and Git Bash (`/c/...`) rsync variants.
+    - **Security invariant**: `.env`, `.env.*`, `target/`, `node_modules/`, `.git/`, `users/`, `models/` NEVER transferred.
+    - After sync, dispatches `aegis_hotreload.sh --repo <target>` on the server via SSH for automatic reload.
+    - `-DryRun` mode shows exactly what would transfer without executing any action.
+    - Timestamped colored output matching SRE conventions.
+
 ## [1.4.4] - 2026-03-20
 ### Fixed
 - **[INST-119] Fix Container Name Conflict in GPU Profile**:
