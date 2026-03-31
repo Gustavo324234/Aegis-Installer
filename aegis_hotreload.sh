@@ -119,7 +119,8 @@ check_bff_health() {
         fi
         [[ "$attempt" -lt "$HEALTH_RETRIES" ]] && sleep "$HEALTH_RETRY_DELAY"
     done
-    warn "BFF health check failed. Last logs:" && docker logs aegis-shell --tail 20 2>&1 || true
+    warn "BFF health check failed. Last logs:"
+    docker logs aegis-shell --tail 20 2>&1 || true
     return 1
 }
 
