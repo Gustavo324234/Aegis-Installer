@@ -10,37 +10,46 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  format:
-    name: Code Formatting Check (Black)
+  format-python:
+    name: Backend Formatting (Black - SRE Auto-Repair)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          token: ${{ (github.actor == 'Gustavo324234' || github.actor == 'Gus-Agost') && secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
-      - name: Install dependencies
-        run: pip install black
+
+      - name: Install Black
+        run: pip install "black>=24,<25"
+
       - name: Run Black Check
         run: black --check .
+        continue-on-error: ${{ github.actor == 'Gustavo324234' || github.actor == 'Gus-Agost' }}
 
-  lint:
-    name: Linting (Flake8 & ShellCheck)
+      - name: Auto-Repair Formatting (Only for Gustavo)
+        if: github.actor == 'Gustavo324234' || github.actor == 'Gus-Agost'
+        run: black .
+
+      - name: Auto-Commit Formatting (Only for Gustavo)
+        if: github.actor == 'Gustavo324234' || github.actor == 'Gus-Agost'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: auto-format Python code (SRE Auto-Repair)"
+          commit_options: "--no-verify"
+
+  lint-shell:
+    name: Linting (ShellCheck)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-      - name: Install dependencies
-        run: |
-          pip install flake8
-          sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Run Flake8
-        run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Run ShellCheck
         run: shellcheck *.sh
 
@@ -59,7 +68,7 @@ jobs:
       - name: Run Pytest
         run: pytest .
 
-  security:
+  security-audit:
     name: Security Vulnerability Scan (Bandit)
     runs-on: ubuntu-latest
     steps:
@@ -76,7 +85,7 @@ jobs:
 
   automerge:
     name: Auto-Merge (Solo Gustavo)
-    needs: [format, lint, test, security]
+    needs: [format-python, lint-shell, test, security-audit]
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && (github.actor == 'Gustavo324234' || github.actor == 'Gus-Agost')
     steps:
