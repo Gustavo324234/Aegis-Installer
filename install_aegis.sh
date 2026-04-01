@@ -333,6 +333,8 @@ security_guard() {
 AEGIS_ROOT_KEY=$root_key
 ANK_TARGET=ank-server:50051
 AEGIS_FEATURES=$SELECTED_FEATURES
+# mTLS Strict Mode: set to true only when AEGIS_TLS_CERT and AEGIS_TLS_KEY are configured
+AEGIS_MTLS_STRICT=false
 EOT
         chmod 600 "$ENV_PATH"
         NEW_INSTALLATION=true
@@ -340,6 +342,11 @@ EOT
     else
         sed -i "s/^AEGIS_FEATURES=.*/AEGIS_FEATURES=$SELECTED_FEATURES/" "$ENV_PATH" \
             || echo "AEGIS_FEATURES=$SELECTED_FEATURES" >> "$ENV_PATH"
+        
+        if ! grep -q "^AEGIS_MTLS_STRICT=" "$ENV_PATH"; then
+            echo "AEGIS_MTLS_STRICT=false" >> "$ENV_PATH"
+        fi
+        
         success "Citadel Credentials validated."
     fi
 }

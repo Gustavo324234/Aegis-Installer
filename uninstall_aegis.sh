@@ -11,6 +11,16 @@
 
 set -euo pipefail  # INST-SEC-121: Strict mode
 
+# --- Configuration ---
+FORCE_UNINSTALL=false
+
+# Argument Parsing
+for arg in "$@"; do
+    case "$arg" in
+        --force|--no-confirm) FORCE_UNINSTALL=true ;;
+    esac
+done
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -43,20 +53,25 @@ error()   { echo -e "${RED}  [X]${NC} $1"; exit 1; }
 
 # INST-SEC-123: Confirmation before deletion
 confirm_deletion() {
-    echo -e "${RED}i¢Å¡-> i¯->¸->  CRITICAL WARNING i¢Å¡-> i¯->¸->${NC}"
-    echo -e "This will DELETE ALL Aegis data including:"
-    echo -e "  - User workspaces in /opt/aegis/users/"
-    echo -e "  - Databases (SQLCipher encrypted)"
-    echo -e "  - Configuration files (.env)"
-    echo -e "  - Docker containers and volumes"
-    echo -e "  - System user 'aegis'"
+    if [ "$FORCE_UNINSTALL" = true ]; then
+        return 0
+    fi
+
+    echo "================================================================"
+    echo "  AEGIS OS — COMPLETE UNINSTALL"
+    echo "================================================================"
     echo ""
-    echo -e "${YELLOW}This action CANNOT be undone!${NC}"
+    echo "  This will permanently delete:"
+    echo "    - All Docker containers and volumes (tenant data, SQLCipher DBs)"
+    echo "    - The 'aegis' system user"
+    echo "    - The systemd aegis.service unit"
+    echo "    - All files in /opt/aegis (if applicable)"
     echo ""
-    read -r -p "Type 'DELETE' (all caps) to confirm: " confirmation
-    
-    if [ "$confirmation" != "DELETE" ]; then
-        echo -e "${GREEN}Uninstall cancelled. No changes made.${NC}"
+    echo "  THIS ACTION IS IRREVERSIBLE."
+    echo ""
+    read -r -p "  Type 'yes' to confirm: " confirmation
+    if [[ "$confirmation" != "yes" ]]; then
+        echo "  Aborted."
         exit 0
     fi
     
