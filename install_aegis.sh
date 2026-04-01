@@ -174,8 +174,9 @@ check_system_requirements() {
         fi
 
         set +e
-        dialog --title "Aegis System Audit" --msgbox "$report" 15 60 --clear
+        dialog --clear --title "Aegis System Audit" --msgbox "$report" 15 60
         set -e
+        clear
     else
         echo "----------------------------------------------------------------"
         printf "| %-20s | %-35s |\n" "REQ" "STATUS"
@@ -253,20 +254,22 @@ configure_profiles() {
         return
     fi
 
+    clear
     log "Select deployment profile..."
 
     local ram_mb
     ram_mb=$(free -m | awk '/^Mem:/{print $2}')
 
     set +e
-    HW_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
-        --backtitle "Aegis Neural Kernel Deployment" \
+    HW_PROFILE=$(dialog --clear --backtitle "Aegis Neural Kernel Deployment" \
+        --title "AEGIS BOOTSTRAPPER" \
         --menu "Select Orchestration Profile:" 15 75 3 \
         "1" "Cloud/Edge (Download GHCR Images - recommended)" \
         "2" "Local Monolith (Build from source - needs 8GB+ RAM)" \
         "3" "Hybrid GPU (Download Images + NVIDIA Runtime)" \
         3>&1 1>&2 2>&3)
     set -e
+    clear
     HW_PROFILE="${HW_PROFILE:-1}"
 
     if [ "${ram_mb:-2048}" -lt 2000 ] && [ "$HW_PROFILE" = "2" ]; then
@@ -489,7 +492,7 @@ print_success() {
 
     if [ "$USE_TUI" = true ]; then
         set +e
-        dialog --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 18 70 --clear
+        dialog --clear --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 18 70
         set -e
         clear
     fi
@@ -500,7 +503,7 @@ print_success() {
     echo -e "$msg"
     echo -e "----------------------------------------------------------------"
     echo -e "${CYAN}SRE TIP:${NC} To uninstall everything, use:"
-    echo -e "${YELLOW}sudo bash <(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)${NC}"
+    echo -e "${YELLOW}sudo bash -c \"\$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)\"${NC}"
 }
 
 # --- MAIN EXECUTION ---

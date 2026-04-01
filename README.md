@@ -44,18 +44,20 @@ This repository is the **installer and orchestrator**. It deploys the full Aegis
 
 Tested on Debian 11+, Ubuntu 20.04+. Requires `sudo`.
 
-### Recommended (Interactive TUI)
-For the professional bootstrapping experience with interactive menus:
+## 🚀 Quick Start (Production)
+
+For a clean installation on Ubuntu/Debian, run the following command as root:
 
 ```bash
-sudo bash <(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh)
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh)"
 ```
 
-### Scripted (Zero-Touch)
-For CI/CD or headless environments (Cloud/Edge + Web UI by default):
+### 🧹 Clean Slate (Full Wipe)
+
+To completely uninstall Aegis (including SQLCipher databases, containers, and system folders) before a fresh reinstall:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh | sudo bash -s -- --no-tui
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)"
 ```
 
 The script installs all dependencies (Docker, Docker Compose, git), clones the repos, generates secrets, and starts the stack. In TUI mode, it will ask:
