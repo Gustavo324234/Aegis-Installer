@@ -125,9 +125,9 @@ log "Removing system user 'aegis'..."
     # Kill any processes running as aegis user
     pkill -u aegis 2>/dev/null || true
     
-    # Delete user and group
-    deluser --remove-home aegis 2>/dev/null || true
-    groupdel aegis 2>/dev/null || true
+    # Delete user and group (SRE-FIX: --quiet and force to avoid interaction)
+    deluser --quiet --remove-home aegis 2>/dev/null || true
+    groupdel -f aegis 2>/dev/null || true
 }
 success "Aegis system identity removed."
 
