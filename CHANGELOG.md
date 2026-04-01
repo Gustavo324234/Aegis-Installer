@@ -66,7 +66,9 @@
     - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
 ### Fixed
+- Declare SERVER_IP as global variable to prevent unbound error in print_success() [INST-29-003]
 - **[INST-116] Capture ANK install token and inject into BFF**:
+
     - Implementada captura automatizada del `INSTALL TOKEN` generado por el Kernel al inicio (extrayéndolo de los logs del contenedor `ank-server`).
     - Inyectado dinámicamente el token en el archivo `.env` bajo la variable `AEGIS_INSTALL_TOKEN`.
     - Agregado reinicio automático del contenedor `aegis-shell` en la fase de orquestación para asegurar que el BFF cargue el token inmediatamente.
@@ -88,6 +90,27 @@
     - Updated `aegis.service` to `ProtectSystem=full` and added Docker socket to `ReadWritePaths`.
     - Removed `sudo -u` wrappers in `orchestrate()` and `setup_workspace()` when already running as unprivileged user via systemd.
     - Used `:?` operator in `docker-compose.yml` to remove `AEGIS_ROOT_KEY` fallback, ensuring a visible error if unset.
+
+### Added
+- **[GOV-108] Smoke Test Suite — Full Stack E2E Verification**:
+    - Created `smoke_test.sh` for post-installation validation.
+    - Implemented 7 non-destructive checks: Docker status, ANK/Shell container state, gRPC port (50051) connectivity, BFF API health, UI accessibility, and environment variable integrity.
+    - Added comprehensive "Smoke Test" section to `README.md` with usage instructions and check details.
+    - Verified with `shellcheck` (0 warnings) and `bash -n` compliance.
+
+- **[ANK-INST-003] Redesign: Zero-friction onboarding — State-based setup:**
+    - Removed `install_token` display logic from the `print_success` screen.
+    - Simplified the bootstrapper by eliminating the need to capture or inject installation tokens.
+    - Fully decoupled the Installer from the Kernel's internal initialization state.
+- **[INST-113] UX Progress Feedback in TUI Mode**:
+    - Reemplazados diálogos silenciosos bloqueantes y agregadas barras de estado (`infobox`) detalladas en las fases críticas (Dependencies, Workspace, Orchestration).
+    - Mejorada interactividad y visibilidad en tiempo real para procesos lentos (`apt-get`, `git clone`, `docker pull`).
+    - Eliminado el bloqueo interactivo (`msgbox`) tras la fase de clonación de repositorio, asegurando un progreso ininterrumpido.
+- **[INST-112] Smart Profiles Bootstrapper (OOM-Safe)**:
+    - Añadidas etiquetas `image` en `docker-compose.yml` apuntando a `ghcr.io/gustavo324234/aegis-ank:latest` y `aegis-shell:latest`.
+    - Refactorizado el menú de `install_aegis.sh` para incluir 3 perfiles de orquestación (Cloud/Edge, Local Monolith, Hybrid GPU).
+    - Implementado Pre-flight RAM Check: Advertencia interactiva OOMKill (`dialog --yesno`) si RAM < 2000MB y se elige compilación local.
+    - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
 
 ### Security
 - **[INST-STB-019] Unprivileged Service Account & Systemd Hardening**:
