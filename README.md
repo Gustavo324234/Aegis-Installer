@@ -36,6 +36,7 @@ This repository is the **installer and orchestrator**. It deploys the full Aegis
 9. [Architecture](#9-architecture)
 10. [Contributing](#10-contributing)
 11. [Roadmap](#11-roadmap)
+12. [Smoke Test](#12-smoke-test)
 
 ---
 
@@ -359,6 +360,28 @@ Tracked for post-MVP:
 | Support for AMD ROCm GPU | planned |
 | Automated upgrade script | planned |
 | ARM64 / Raspberry Pi support | planned |
+
+---
+
+## 12. Smoke Test
+
+After installation, you can verify that the full Aegis stack is operational by running the Smoke Test suite. This script performs 7 non-destructive checks to ensure that all services are correctly connected and responding.
+
+```bash
+cd /opt/aegis/Aegis-Installer
+bash smoke_test.sh
+```
+
+**Checks performed:**
+- **Docker daemon**: Verifies that the Docker engine is running.
+- **ANK Container**: Checks if the Neural Kernel container is active.
+- **Shell Container**: Checks if the UI + BFF container is active.
+- **gRPC Connectivity**: Validates that port 50051 is open and accessible.
+- **BFF Status**: Requests `/api/status` to ensure the backend is initialized.
+- **UI Accessibility**: Verifies that the Web UI is serving HTTP 200.
+- **Root Secrecy**: Ensures `AEGIS_ROOT_KEY` is correctly defined in `.env`.
+
+This script is ideal for post-deployment verification and CI pipelines.
 
 ---
 

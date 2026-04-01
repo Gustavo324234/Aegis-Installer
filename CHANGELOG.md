@@ -32,7 +32,25 @@
 
 ## [Unreleased]
 
+### Security
+- **[INST-SEC-125] Implicit mTLS mode for Bootstrap**:
+  - Added `AEGIS_MTLS_STRICT=false` to the generated `.env` file during the `security_guard()` phase.
+  - This prevents the Aegis-ANK Kernel from entering a restart loop when running without certificates (default behavior in new installations).
+  - Added logic to inject the variable into existing `.env` files if missing, ensuring backward compatibility.
+- **[INST-SEC-122] Strict diagnostics mode**:
+  - Implemented `set -euo pipefail` in `aegis_diag.sh` for reliable system diagnostics.
+  - Hardened command execution with proper error handling and fallback messages.
+- **[INST-SEC-123] Destructive action safeguards**:
+  - Added explicit 'yes' confirmation prompt to `uninstall_aegis.sh` to prevent accidental data loss.
+  - Implemented `--force` and `--no-confirm` flags for automated environments.
+
 ### Added
+- **[GOV-108] Smoke Test Suite — Full Stack E2E Verification**:
+    - Created `smoke_test.sh` for post-installation validation.
+    - Implemented 7 non-destructive checks: Docker status, ANK/Shell container state, gRPC port (50051) connectivity, BFF API health, UI accessibility, and environment variable integrity.
+    - Added comprehensive "Smoke Test" section to `README.md` with usage instructions and check details.
+    - Verified with `shellcheck` (0 warnings) and `bash -n` compliance.
+
 - **[ANK-INST-003] Redesign: Zero-friction onboarding — State-based setup:**
     - Removed `install_token` display logic from the `print_success` screen.
     - Simplified the bootstrapper by eliminating the need to capture or inject installation tokens.
