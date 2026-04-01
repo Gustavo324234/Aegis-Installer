@@ -50,7 +50,7 @@ Each synchronization generates a unique marker (e.g., `DevSync-20260325-1521`).
 ## 4. Troubleshooting
 
 ### Permission Denied on Server
-If file operations fail on the server, ensure `aegis_hotreload.sh` has `sudo` permissions or that the `diego` user is in the `docker` group.
+If file operations fail on the server, ensure `aegis_hotreload.sh` has `sudo` permissions or that the `aegis` user is in the `docker` group.
 
 ### Port 50051 not available
 The ANK port is **internal only**. If you need to check health from the host, use:
