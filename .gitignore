@@ -21,3 +21,6 @@ root_key.txt
 .cursor/
 .agents/
 .gemini/
+
+# Tickets — internal, stored in Aegis-Governance (private repo)
+Tickets/

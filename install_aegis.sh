@@ -26,6 +26,8 @@ SELECTED_FEATURES=""
 SELECTED_UI="web"
 INVOKING_USER=${SUDO_USER:-$(whoami)}
 NEW_INSTALLATION=false
+SERVER_IP=""
+
 
 # Docker Compose download config (INST-SEC-124)
 DOCKER_COMPOSE_VERSION="v2.24.0"
