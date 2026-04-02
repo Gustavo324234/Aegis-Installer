@@ -1,0 +1,17 @@
+[Unit]
+Description=Aegis OS — Neural Kernel + Shell
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/aegis/Aegis-Installer
+ExecStart=/usr/bin/docker compose --profile cpu --profile frontend up -d
+ExecStop=/usr/bin/docker compose --profile cpu --profile frontend down
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

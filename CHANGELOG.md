@@ -198,3 +198,8 @@
 ### Added
 - **[INST-SEC-121] Shell Strict Mode Verification:**
   - Added `test_scripts.py` to verify that all deployment and uninstallation scripts (`install_aegis.sh`, `uninstall_aegis.sh`) enforce `set -euo pipefail` to ensure atomic and fail-fast operations.
+
+## [v1.4.7] - 2026-04-01
+### Fixed
+- Fixed infinite `y/y/y` loop in `uninstall_aegis.sh` by enforcing non-interactive behavior in `deluser` and `groupdel`.
+- Standardized and documented `sudo bash -c "$(curl ...)"` as the official installation method to prevent file descriptor errors (`/dev/fd/63`) and provide reliable TTY access for interactive menus.
