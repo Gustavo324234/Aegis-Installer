@@ -54,7 +54,7 @@ print_banner() {
   \_| |_\____/ \____/\___/\____/   \___/\____/
 EOF
     echo -e "${NC}"
-    echo -e "      Aegis OS Professional Bootstrapper - v1.4.6"
+    echo -e "      Aegis OS Professional Bootstrapper - v1.4.7"
     echo -e "------------------------------------------------------------"
 }
 
@@ -227,6 +227,9 @@ install_dependencies() {
         log "Installing Docker Engine (this may take 2-3 minutes)..."
         curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
         systemctl enable --now docker >> "$LOG_FILE" 2>&1
+    else
+        # Asegurar que Docker esté habilitado para arrancar con el sistema
+        systemctl enable docker >> "$LOG_FILE" 2>&1 || true
     fi
 
     if ! docker compose version &> /dev/null; then
@@ -285,8 +288,8 @@ configure_profiles() {
     UI_PROFILE=$(dialog --clear --title "AEGIS BOOTSTRAPPER" \
         --backtitle "Aegis Neural Kernel Deployment" \
         --menu "Select Interface Profile:" 12 65 2 \
-        "1" "Aegis Shell (Full stack i¢->‚¬->€ kernel + web UI)" \
-        "2" "Headless (Kernel only i¢->‚¬->€ gRPC access)" \
+        "1" "Aegis Shell (Full stack i¢->‚¬->€ kernel + web UI)" \
+        "2" "Headless (Kernel only i¢->‚¬->€ gRPC access)" \
         3>&1 1>&2 2>&3)
     set -e
     UI_PROFILE="${UI_PROFILE:-1}"
@@ -379,31 +382,38 @@ create_aegis_user() {
 
 # 7. Systemd Service Installation
 install_systemd_service() {
-    log "Installing hardened aegis.service systemd unit..."
+    log "Installing aegis.service systemd unit (auto-start on boot)..."
+
+    # Determinar los profiles de compose según configuración
+    local compose_profiles="--profile cpu"
+    if [ "$SELECTED_UI" = "web" ]; then
+        compose_profiles="--profile cpu --profile frontend"
+    fi
+    if [ "$HW_PROFILE" = "3" ]; then
+        compose_profiles="--profile gpu --profile frontend"
+    fi
 
     local unit_file="/etc/systemd/system/aegis.service"
 
-    cat > "$unit_file" <<'UNIT'
+    cat > "$unit_file" <<UNIT
 [Unit]
-Description=Aegis OS Bootstrap Orchestrator
-After=network.target docker.service
+Description=Aegis OS — Neural Kernel + Shell
+Documentation=https://github.com/Gustavo324234/Aegis-Installer
+After=network-online.target docker.service
+Wants=network-online.target
 Requires=docker.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-User=aegis
 WorkingDirectory=/opt/aegis/Aegis-Installer
-ExecStart=/bin/bash /opt/aegis/Aegis-Installer/install_aegis.sh --no-tui
+ExecStart=/usr/bin/docker compose ${compose_profiles} up -d --pull always
+ExecStop=/usr/bin/docker compose ${compose_profiles} down
+ExecReload=/usr/bin/docker compose ${compose_profiles} pull && /usr/bin/docker compose ${compose_profiles} up -d
 StandardOutput=journal
 StandardError=journal
-
-# Systemd hardening
-NoNewPrivileges=true
-ProtectSystem=full
-ProtectHome=true
-ReadWritePaths=/opt/aegis /tmp /var/run/docker.sock /var/lib/docker
-PrivateTmp=true
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -411,11 +421,71 @@ UNIT
 
     chmod 644 "$unit_file"
 
-    if ! systemctl daemon-reload >> "$LOG_FILE" 2>&1; then
-        warn "systemctl daemon-reload failed - systemd may not be running in this environment."
+    if systemctl daemon-reload >> "$LOG_FILE" 2>&1; then
+        systemctl enable aegis.service >> "$LOG_FILE" 2>&1
+        success "aegis.service instalado y habilitado — arrancará automáticamente en cada inicio."
     else
-        success "Systemd unit installed and daemon reloaded."
+        warn "systemctl no disponible en este entorno — auto-start no configurado."
     fi
+
+    # Instalar aegis-token helper
+    log "Installing aegis-token helper..."
+    cat > /usr/local/bin/aegis-token <<'SCRIPT'
+#!/bin/bash
+# aegis-token — Regenera el token de acceso de Aegis OS
+# Correr si el token de setup venció antes de poder usarlo.
+
+CYAN='\033[0;36m'
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || SERVER_IP="localhost"
+
+if ! docker ps --filter "name=aegis-ank" --filter "status=running" -q | grep -q .; then
+    echo -e "${RED}[ERROR]${NC} El container aegis-ank no está corriendo."
+    echo "Inicialo con: sudo systemctl start aegis"
+    exit 1
+fi
+
+echo -e "${CYAN}Verificando estado de Aegis OS...${NC}"
+
+STATUS=$(curl -s --max-time 5 http://localhost:8000/api/admin/status 2>/dev/null || echo "")
+
+if echo "$STATUS" | grep -q '"initialized":true'; then
+    echo ""
+    echo -e "${GREEN}Aegis OS ya está configurado.${NC}"
+    echo "Ingresá en: http://$SERVER_IP:8000"
+    exit 0
+fi
+
+echo -e "${CYAN}Regenerando token de setup...${NC}"
+docker restart aegis-ank > /dev/null 2>&1
+sleep 5
+
+TOKEN=$(docker logs aegis-ank 2>&1 | grep "setup_token=" | tail -1 | sed 's/.*setup_token=\([^ ]*\).*/\1/')
+
+if [ -z "$TOKEN" ]; then
+    echo -e "${RED}[ERROR]${NC} No se pudo obtener el token."
+    echo "Revisá los logs: docker logs aegis-ank"
+    exit 1
+fi
+
+echo ""
+echo -e "${GREEN}################################################################${NC}"
+echo -e "${GREEN}#         AEGIS OS — TOKEN REGENERADO                          #${NC}"
+echo -e "${GREEN}################################################################${NC}"
+echo ""
+echo "  Abrí esta URL en tu browser:"
+echo ""
+echo -e "  ${CYAN}http://$SERVER_IP:8000?setup_token=$TOKEN${NC}"
+echo ""
+echo "  El token vence en 30 minutos."
+echo ""
+SCRIPT
+
+    chmod +x /usr/local/bin/aegis-token
+    success "aegis-token instalado en /usr/local/bin/aegis-token"
 }
 
 # 8. Orchestration
@@ -440,7 +510,7 @@ orchestrate() {
 
     # Self-Healing: If new key, scrub old volumes to prevent SQLCipher hmac failure
     if [ "$NEW_INSTALLATION" = true ]; then
-        log "Fresh installation detected i¢->‚¬->€ scrubbing orphaned volumes..."
+        log "Fresh installation detected — scrubbing orphaned volumes..."
         "${compose_cmd[@]}" down --volumes 2>/dev/null || true
     fi
 
@@ -451,14 +521,14 @@ orchestrate() {
                       "$INSTALL_ROOT/Aegis-Installer/models" 2>/dev/null || true
 
     log "Executing deployment plan (ui: ${SELECTED_UI}, hw: ${HW_PROFILE})..."
-    log "Pulling Docker images i¢->‚¬->€ this may take several minutes on first run..."
+    log "Pulling Docker images — this may take several minutes on first run..."
 
     if [ "$HW_PROFILE" = "2" ]; then
         "${compose_cmd[@]}" "${profile_flags[@]}" up -d --build >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
     else
         "${compose_cmd[@]}" "${profile_flags[@]}" pull >> "$LOG_FILE" 2>&1 \
-            || warn "Image pull failed i¢->‚¬->€ continuing with cached images."
+            || warn "Image pull failed — continuing with cached images."
         log "Starting containers..."
         "${compose_cmd[@]}" "${profile_flags[@]}" up -d >> "$LOG_FILE" 2>&1 \
             || error "Orchestration failed. Check $LOG_FILE"
@@ -469,20 +539,20 @@ orchestrate() {
 
 # 9. Final Success Screen
 print_success() {
-    # Get the primary local network IP (the interface used for the default route)
-    # Fallback chain: hostname -I -> localhost
     if [ -z "$SERVER_IP" ]; then
         SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
     fi
     if [ -z "$SERVER_IP" ]; then
         SERVER_IP="localhost"
     fi
+
     local msg="\n"
     msg+="AEGIS OS - DEPLOYMENT COMPLETED\n"
     msg+="-----------------------------------\n"
     msg+="Status:       READY\n"
     msg+="User:         $INVOKING_USER\n"
     msg+="Root Key:     [SECURED]\n"
+    msg+="Auto-start:   ENABLED (systemctl)\n"
 
     if [ "$SELECTED_UI" = "web" ]; then
         msg+="Nexus URL:    http://$SERVER_IP:8000\n"
@@ -502,8 +572,14 @@ print_success() {
     echo -e "${GREEN}################################################################${NC}"
     echo -e "$msg"
     echo -e "----------------------------------------------------------------"
-    echo -e "${CYAN}SRE TIP:${NC} To uninstall everything, use:"
-    echo -e "${YELLOW}sudo bash -c \"\$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)\"${NC}"
+    echo -e "${CYAN}Auto-start:${NC} Aegis levantará automáticamente en cada reinicio del servidor."
+    echo -e "${CYAN}Comandos útiles:${NC}"
+    echo -e "  sudo systemctl status aegis    — ver estado"
+    echo -e "  sudo systemctl restart aegis   — reiniciar"
+    echo -e "  sudo aegis-token               — regenerar token de acceso"
+    echo -e "----------------------------------------------------------------"
+    echo -e "${CYAN}SRE TIP:${NC} Para desinstalar:"
+    echo -e "${YELLOW}sudo bash /opt/aegis/Aegis-Installer/uninstall_aegis.sh${NC}"
 }
 
 # --- MAIN EXECUTION ---
