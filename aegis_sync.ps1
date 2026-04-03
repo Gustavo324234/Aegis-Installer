@@ -28,15 +28,15 @@ param(
     [ValidateSet("all", "ank", "shell", "installer")]
     [string]$Repo = "all",
 
-    [string]$Server = "192.168.1.20",
+    [string]$Server = "192.168.1.6",
 
-    [string]$User = "diego",
+    [string]$User = "tavo",
 
     [string]$KeyPath = "$HOME\.ssh\id_ed25519",
 
     [string]$LocalBase = "C:\Aegis",
 
-    [string]$RemoteBase = "/home/diego/Documentos/Aegis",
+    [string]$RemoteBase = "/opt/aegis",
 
     [switch]$DryRun,
     [switch]$ResetSystem
