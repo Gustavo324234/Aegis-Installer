@@ -8,6 +8,11 @@
     - Automatically extracts the one-time `setup_token` from ANK logs.
     - Displays a clickable URL with the token for zero-friction first-time administrative setup.
     - Added fallback instructions to use `sudo aegis-token` if the token cannot be retrieved automatically.
+- **[INST-29-002] CLI `aegis-token` Utility**:
+    - Created a standalone `aegis_token.sh` script to facilitate setup token regeneration.
+    - Enables users to trigger manual token regeneration via SSH/CLI if the initial token expires.
+    - Automatically checks system status via the BFF API to prevent unauthorized token exposure on already-configured systems.
+    - Integrated into the deployment process for automatic installation in `/usr/local/bin/aegis-token`.
 
 ## [1.5.0] - 2026-03-25
 ### Added

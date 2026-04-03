@@ -428,64 +428,11 @@ UNIT
         warn "systemctl no disponible en este entorno — auto-start no configurado."
     fi
 
-    # Instalar aegis-token helper
+    # Install aegis-token helper
     log "Installing aegis-token helper..."
-    cat > /usr/local/bin/aegis-token <<'SCRIPT'
-#!/bin/bash
-# aegis-token — Regenera el token de acceso de Aegis OS
-# Correr si el token de setup venció antes de poder usarlo.
-
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || SERVER_IP="localhost"
-
-if ! docker ps --filter "name=aegis-ank" --filter "status=running" -q | grep -q .; then
-    echo -e "${RED}[ERROR]${NC} El container aegis-ank no está corriendo."
-    echo "Inicialo con: sudo systemctl start aegis"
-    exit 1
-fi
-
-echo -e "${CYAN}Verificando estado de Aegis OS...${NC}"
-
-STATUS=$(curl -s --max-time 5 http://localhost:8000/api/admin/status 2>/dev/null || echo "")
-
-if echo "$STATUS" | grep -q '"initialized":true'; then
-    echo ""
-    echo -e "${GREEN}Aegis OS ya está configurado.${NC}"
-    echo "Ingresá en: http://$SERVER_IP:8000"
-    exit 0
-fi
-
-echo -e "${CYAN}Regenerando token de setup...${NC}"
-docker restart aegis-ank > /dev/null 2>&1
-sleep 5
-
-TOKEN=$(docker logs aegis-ank 2>&1 | grep "setup_token=" | tail -1 | sed 's/.*setup_token=\([^ ]*\).*/\1/')
-
-if [ -z "$TOKEN" ]; then
-    echo -e "${RED}[ERROR]${NC} No se pudo obtener el token."
-    echo "Revisá los logs: docker logs aegis-ank"
-    exit 1
-fi
-
-echo ""
-echo -e "${GREEN}################################################################${NC}"
-echo -e "${GREEN}#         AEGIS OS — TOKEN REGENERADO                          #${NC}"
-echo -e "${GREEN}################################################################${NC}"
-echo ""
-echo "  Abrí esta URL en tu browser:"
-echo ""
-echo -e "  ${CYAN}http://$SERVER_IP:8000?setup_token=$TOKEN${NC}"
-echo ""
-echo "  El token vence en 30 minutos."
-echo ""
-SCRIPT
-
+    cp "$INSTALL_ROOT/Aegis-Installer/aegis_token.sh" /usr/local/bin/aegis-token
     chmod +x /usr/local/bin/aegis-token
-    success "aegis-token instalado en /usr/local/bin/aegis-token"
+    success "aegis-token installed. Run 'sudo aegis-token' to regenerate setup token."
 }
 
 # 8. Orchestration

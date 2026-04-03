@@ -19,6 +19,18 @@ ANK_TIMEOUT=500
 HEALTH_RETRIES=10
 HEALTH_RETRY_DELAY=5
 
+# --- Docker Compose Command Detection ---
+get_compose_cmd() {
+    if docker compose version &>/dev/null; then
+        echo "docker compose"
+    elif docker-compose version &>/dev/null; then
+        echo "docker-compose"
+    else
+        echo "docker compose" # Fallback to default
+    fi
+}
+COMPOSE_CMD=$(get_compose_cmd)
+
 # --- Colors ---
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -49,18 +61,30 @@ reset_system() {
     warn "RESETTING AEGIS TO ZERO... This will wipe all tenants and DATABASE VOLUMES."
     cd "$COMPOSE_DIR"
     
-    # SRE-009: Robust Wipe - stop current stack and prune the specific volume
-    sudo docker compose down -v --remove-orphans || true
-    sudo docker volume rm aegis-installer_ank-data 2>/dev/null || true
+    # SRE-009: Robust Wipe - stop everything including all possible profiles
+    log "Stopping all containers and removing volumes..."
+    # We use --profile "*" if supported, otherwise we stop known profiles
+    sudo $COMPOSE_CMD --profile "*" down -v --remove-orphans || \
+    sudo $COMPOSE_CMD --profile frontend --profile cpu --profile gpu down -v --remove-orphans || true
     
-    log "Clearing local persistent storage..."
+    # Hard wipe of the volume by name just in case 'down -v' failed due to naming mismatches
+    log "Ensuring volume cleanup..."
+    for vol in $(sudo docker volume ls -q | grep "ank-data"); do
+        log "Removing volume: $vol"
+        sudo docker volume rm -f "$vol" 2>/dev/null || true
+    done
+    
+    log "Clearing local persistent storage (workspaces)..."
     [ -d users ] && sudo rm -rf users/*
     [ -d models ] && sudo rm -rf models/*
     sudo mkdir -p users models
+    sudo chmod 777 users models
     sudo touch users/.gitkeep models/.gitkeep
     
     log "Initiating fresh stack deployment..."
-    sudo docker compose --profile frontend --profile cpu up -d
+    # Determinamos qué perfiles levantar. Si estábamos en GPU, mantenemos GPU.
+    # Por defecto levantamos frontend + cpu para asegurar el bff.
+    sudo $COMPOSE_CMD --profile frontend --profile cpu up -d
     
     log "Injecting dev environment code..."
     # Copy BFF

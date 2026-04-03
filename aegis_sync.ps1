@@ -64,6 +64,7 @@ $RsyncExcludes = @(
     "--exclude=*.pyc",
     "--exclude=users/",
     "--exclude=models/",
+    "--exclude=data/",
     "--exclude=.env",
     "--exclude=.env.*"
 )
