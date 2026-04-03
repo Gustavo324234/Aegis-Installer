@@ -428,64 +428,11 @@ UNIT
         warn "systemctl no disponible en este entorno — auto-start no configurado."
     fi
 
-    # Instalar aegis-token helper
+    # Install aegis-token helper
     log "Installing aegis-token helper..."
-    cat > /usr/local/bin/aegis-token <<'SCRIPT'
-#!/bin/bash
-# aegis-token — Regenera el token de acceso de Aegis OS
-# Correr si el token de setup venció antes de poder usarlo.
-
-CYAN='\033[0;36m'
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || SERVER_IP="localhost"
-
-if ! docker ps --filter "name=aegis-ank" --filter "status=running" -q | grep -q .; then
-    echo -e "${RED}[ERROR]${NC} El container aegis-ank no está corriendo."
-    echo "Inicialo con: sudo systemctl start aegis"
-    exit 1
-fi
-
-echo -e "${CYAN}Verificando estado de Aegis OS...${NC}"
-
-STATUS=$(curl -s --max-time 5 http://localhost:8000/api/admin/status 2>/dev/null || echo "")
-
-if echo "$STATUS" | grep -q '"initialized":true'; then
-    echo ""
-    echo -e "${GREEN}Aegis OS ya está configurado.${NC}"
-    echo "Ingresá en: http://$SERVER_IP:8000"
-    exit 0
-fi
-
-echo -e "${CYAN}Regenerando token de setup...${NC}"
-docker restart aegis-ank > /dev/null 2>&1
-sleep 5
-
-TOKEN=$(docker logs aegis-ank 2>&1 | grep "setup_token=" | tail -1 | sed 's/.*setup_token=\([^ ]*\).*/\1/')
-
-if [ -z "$TOKEN" ]; then
-    echo -e "${RED}[ERROR]${NC} No se pudo obtener el token."
-    echo "Revisá los logs: docker logs aegis-ank"
-    exit 1
-fi
-
-echo ""
-echo -e "${GREEN}################################################################${NC}"
-echo -e "${GREEN}#         AEGIS OS — TOKEN REGENERADO                          #${NC}"
-echo -e "${GREEN}################################################################${NC}"
-echo ""
-echo "  Abrí esta URL en tu browser:"
-echo ""
-echo -e "  ${CYAN}http://$SERVER_IP:8000?setup_token=$TOKEN${NC}"
-echo ""
-echo "  El token vence en 30 minutos."
-echo ""
-SCRIPT
-
+    cp "$INSTALL_ROOT/Aegis-Installer/aegis_token.sh" /usr/local/bin/aegis-token
     chmod +x /usr/local/bin/aegis-token
-    success "aegis-token instalado en /usr/local/bin/aegis-token"
+    success "aegis-token installed. Run 'sudo aegis-token' to regenerate setup token."
 }
 
 # 8. Orchestration
@@ -539,47 +486,50 @@ orchestrate() {
 
 # 9. Final Success Screen
 print_success() {
+    # Get SERVER_IP if not already set (INST-29-003 fix)
     if [ -z "$SERVER_IP" ]; then
-        SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+        SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}') || SERVER_IP="localhost"
     fi
     if [ -z "$SERVER_IP" ]; then
         SERVER_IP="localhost"
     fi
 
-    local msg="\n"
-    msg+="AEGIS OS - DEPLOYMENT COMPLETED\n"
-    msg+="-----------------------------------\n"
-    msg+="Status:       READY\n"
-    msg+="User:         $INVOKING_USER\n"
-    msg+="Root Key:     [SECURED]\n"
-    msg+="Auto-start:   ENABLED (systemctl)\n"
+    # Wait for ANK to be ready (max 30 seconds)
+    log "Waiting for Aegis Neural Kernel to initialize..."
+    local attempts=0
+    until docker logs aegis-ank 2>&1 | grep -q "KernelService.*levantado\|setup_token=\|already initialized"; do
+        sleep 2
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 15 ]; then
+            warn "ANK initialization timeout — check logs with: docker logs aegis-ank"
+            break
+        fi
+    done
 
-    if [ "$SELECTED_UI" = "web" ]; then
-        msg+="Nexus URL:    http://$SERVER_IP:8000\n"
-    else
-        msg+="Mode:         Headless (gRPC on port 50051)\n"
-    fi
-
-    if [ "$USE_TUI" = true ]; then
-        set +e
-        dialog --clear --title "DEPLOYMENT COMPLETE" --msgbox "$msg" 18 70
-        set -e
-        clear
-    fi
+    # Try to get setup token from logs
+    local setup_token
+    setup_token=$(docker logs aegis-ank 2>&1 | grep "setup_token=" | tail -1 | sed 's/.*setup_token=\([^ ]*\).*/\1/' 2>/dev/null || echo "")
 
     echo -e "${GREEN}################################################################${NC}"
     echo -e "${GREEN}#          AEGIS OS - DEPLOYMENT COMPLETED                      #${NC}"
     echo -e "${GREEN}################################################################${NC}"
-    echo -e "$msg"
-    echo -e "----------------------------------------------------------------"
-    echo -e "${CYAN}Auto-start:${NC} Aegis levantará automáticamente en cada reinicio del servidor."
-    echo -e "${CYAN}Comandos útiles:${NC}"
-    echo -e "  sudo systemctl status aegis    — ver estado"
-    echo -e "  sudo systemctl restart aegis   — reiniciar"
-    echo -e "  sudo aegis-token               — regenerar token de acceso"
-    echo -e "----------------------------------------------------------------"
-    echo -e "${CYAN}SRE TIP:${NC} Para desinstalar:"
-    echo -e "${YELLOW}sudo bash /opt/aegis/Aegis-Installer/uninstall_aegis.sh${NC}"
+    echo ""
+
+    if [ -n "$setup_token" ]; then
+        echo -e "${CYAN}  FIRST TIME SETUP:${NC}"
+        echo -e "  Open this URL in your browser:"
+        echo ""
+        echo -e "  ${GREEN}http://$SERVER_IP:8000?setup_token=$setup_token${NC}"
+        echo ""
+        echo -e "  Token expires in 30 minutes."
+        echo -e "  If it expires, run: ${CYAN}sudo aegis-token${NC}"
+    else
+        echo -e "  Aegis Shell: ${CYAN}http://$SERVER_IP:8000${NC}"
+    fi
+
+    echo ""
+    echo -e "  To uninstall: ${YELLOW}sudo bash /opt/aegis/Aegis-Installer/uninstall_aegis.sh${NC}"
+    echo -e "${GREEN}################################################################${NC}"
 }
 
 # --- MAIN EXECUTION ---

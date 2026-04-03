@@ -1,30 +1,3 @@
-# INST-29-002 — CLI `aegis-token`: regenerar token de acceso desde el servidor
-
-**Épica:** 29 — Zero-Friction First Access
-**Repo:** Aegis-Installer
-**Asignado a:** DevOps Engineer
-**Prioridad:** 🔴 Alta — mecanismo de recuperación cuando vence el token inicial
-**Estado:** DONE
-**Depende de:** ANK-29-001
-
----
-
-## Contexto
-
-Cuando el token de 30 minutos vence (o el usuario no lo vio en los logs del installer), necesita una forma de recuperar el acceso sin requerir:
-- Conocer la contraseña del sistema
-- Saber usar Docker
-- Entrar al container manualmente
-
-La solución es un script `aegis-token` instalado en `/usr/local/bin/` que cualquier usuario con acceso SSH puede correr para regenerar el token.
-
----
-
-## Trabajo requerido
-
-### Crear `/opt/aegis/Aegis-Installer/aegis_token.sh`
-
-```bash
 #!/bin/bash
 # aegis-token — Regenerate Aegis OS setup token
 # Run this if your setup token expired before you could use it.
@@ -92,35 +65,3 @@ echo ""
 echo "  Token expires in 30 minutes."
 echo ""
 echo -e "${GREEN}################################################################${NC}"
-```
-
-### Instalar el script en el sistema
-
-En `install_aegis.sh`, al final de `install_systemd_service()`, agregar:
-
-```bash
-# Install aegis-token helper
-log "Installing aegis-token helper..."
-cp "$INSTALL_ROOT/Aegis-Installer/aegis_token.sh" /usr/local/bin/aegis-token
-chmod +x /usr/local/bin/aegis-token
-success "aegis-token installed. Run 'sudo aegis-token' to regenerate setup token."
-```
-
----
-
-## Criterios de aceptación
-
-- [ ] `sudo aegis-token` funciona desde cualquier usuario con acceso SSH
-- [ ] Si el admin ya existe, muestra el URL normal sin token
-- [ ] Si el admin no existe, regenera el token y muestra la URL completa
-- [ ] El script pasa `shellcheck` sin warnings
-- [ ] El script pasa `bash -n` sin errores
-- [ ] El script está instalado en `/usr/local/bin/aegis-token` post-install
-
----
-
-## Notas
-
-- El script requiere `sudo` solo para leer logs de Docker si el usuario no está en el grupo docker
-- Alternativa más simple: si el BFF expone `/api/admin/token/regenerate` (endpoint protegido por localhost), el script puede llamarlo directamente sin reiniciar el container
-- Discutir con el Arquitecto IA si el endpoint BFF es preferible al restart del container
