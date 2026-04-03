@@ -11,8 +11,8 @@
 set -euo pipefail
 
 # --- Configuration ---
-COMPOSE_DIR="/home/diego/Documentos/Aegis/Aegis-Installer"
-ANK_SRC_DIR="/home/diego/Documentos/Aegis/Aegis-ANK"
+COMPOSE_DIR="/opt/aegis/Aegis-Installer"
+ANK_SRC_DIR="/opt/aegis/Aegis-ANK"
 BFF_HEALTH_URL="http://localhost:8000/api/system/state"
 ANK_PORT=50051
 ANK_TIMEOUT=500
@@ -64,14 +64,14 @@ reset_system() {
     
     log "Injecting dev environment code..."
     # Copy BFF
-    docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/
+    docker cp /opt/aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/
     # Copy UI dist
-    if [ -d "/home/diego/Documentos/Aegis/Aegis-Shell/ui/dist" ]; then
-        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
+    if [ -d "/opt/aegis/Aegis-Shell/ui/dist" ]; then
+        docker cp /opt/aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
     fi
     # Copy Sync Version
-    if [ -f "/home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION" ]; then
-        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
+    if [ -f "/opt/aegis/Aegis-Shell/bff/VERSION" ]; then
+        docker cp /opt/aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
     fi
     
     # Restart to pick up changes in main.py
@@ -126,15 +126,15 @@ check_bff_health() {
 
 reload_shell() {
     log "Copying updated BFF files into container..."
-    docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/ || \
+    docker cp /opt/aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/ || \
         error_exit "Failed to copy BFF files to container"
     
-    if [ -d "/home/diego/Documentos/Aegis/Aegis-Shell/ui/dist" ]; then
-        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
+    if [ -d "/opt/aegis/Aegis-Shell/ui/dist" ]; then
+        docker cp /opt/aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
     fi
 
-    if [ -f "/home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION" ]; then
-        docker cp /home/diego/Documentos/Aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
+    if [ -f "/opt/aegis/Aegis-Shell/bff/VERSION" ]; then
+        docker cp /opt/aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
     fi
     
     success "BFF files updated in container"
