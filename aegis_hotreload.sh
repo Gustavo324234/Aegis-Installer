@@ -56,6 +56,30 @@ REPO="all"
 FORCE_FULL=false
 RESET_SYSTEM=false
 
+# --- Privilege Wrapper ---
+# Detects if sudo is needed for docker/file operations
+SUDO_CMD=""
+if [[ $EUID -ne 0 ]] && ! groups | grep -qi "docker"; then
+    SUDO_CMD="sudo"
+fi
+
+# Same for file operations (if not owner, use sudo)
+FILE_SUDO=""
+[[ $EUID -ne 0 ]] && FILE_SUDO="sudo"
+
+# --- Docker Compose Command Detection ---
+get_compose_cmd() {
+    if docker compose version &>/dev/null; then
+        echo "$SUDO_CMD docker compose"
+    elif docker-compose version &>/dev/null; then
+        echo "$SUDO_CMD docker-compose"
+    else
+        echo "$SUDO_CMD docker compose" # Fallback to default
+    fi
+}
+DOCKER_CMD="$SUDO_CMD docker"
+COMPOSE_CMD=$(get_compose_cmd)
+
 # --- Reset: System (Wipes users, models and VOLUMES to restart from zero) ---
 reset_system() {
     warn "RESETTING AEGIS TO ZERO... This will wipe all tenants and DATABASE VOLUMES."
@@ -64,42 +88,40 @@ reset_system() {
     # SRE-009: Robust Wipe - stop everything including all possible profiles
     log "Stopping all containers and removing volumes..."
     # We use --profile "*" if supported, otherwise we stop known profiles
-    sudo $COMPOSE_CMD --profile "*" down -v --remove-orphans || \
-    sudo $COMPOSE_CMD --profile frontend --profile cpu --profile gpu down -v --remove-orphans || true
+    $COMPOSE_CMD --profile "*" down -v --remove-orphans || \
+    $COMPOSE_CMD --profile frontend --profile cpu --profile gpu down -v --remove-orphans || true
     
     # Hard wipe of the volume by name just in case 'down -v' failed due to naming mismatches
     log "Ensuring volume cleanup..."
-    for vol in $(sudo docker volume ls -q | grep "ank-data"); do
+    for vol in $($DOCKER_CMD volume ls -q | grep "ank-data"); do
         log "Removing volume: $vol"
-        sudo docker volume rm -f "$vol" 2>/dev/null || true
+        $DOCKER_CMD volume rm -f "$vol" 2>/dev/null || true
     done
     
     log "Clearing local persistent storage (workspaces)..."
-    [ -d users ] && sudo rm -rf users/*
-    [ -d models ] && sudo rm -rf models/*
-    sudo mkdir -p users models
-    sudo chmod 777 users models
-    sudo touch users/.gitkeep models/.gitkeep
+    [ -d users ] && $FILE_SUDO rm -rf users/*
+    [ -d models ] && $FILE_SUDO rm -rf models/*
+    $FILE_SUDO mkdir -p users models
+    $FILE_SUDO chmod 777 users models
+    $FILE_SUDO touch users/.gitkeep models/.gitkeep
     
     log "Initiating fresh stack deployment..."
-    # Determinamos qué perfiles levantar. Si estábamos en GPU, mantenemos GPU.
-    # Por defecto levantamos frontend + cpu para asegurar el bff.
-    sudo $COMPOSE_CMD --profile frontend --profile cpu up -d
+    $COMPOSE_CMD --profile frontend --profile cpu up -d
     
     log "Injecting dev environment code..."
     # Copy BFF
-    docker cp /opt/aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/
+    $DOCKER_CMD cp /opt/aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/
     # Copy UI dist
     if [ -d "/opt/aegis/Aegis-Shell/ui/dist" ]; then
-        docker cp /opt/aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
+        $DOCKER_CMD cp /opt/aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
     fi
     # Copy Sync Version
     if [ -f "/opt/aegis/Aegis-Shell/bff/VERSION" ]; then
-        docker cp /opt/aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
+        $DOCKER_CMD cp /opt/aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
     fi
     
     # Restart to pick up changes in main.py
-    docker restart aegis-shell
+    $DOCKER_CMD restart aegis-shell
 
     # INST-122: Rebuild ANK to ensure hashing logic is consistent
     log "Rebuilding ANK binary to ensure local source code is active post-reset..."
@@ -115,14 +137,14 @@ reset_system() {
 
 check_ank_health() {
     log "Verifying ANK container status..."
-    if [[ $(docker inspect -f '{{.State.Running}}' aegis-ank 2>/dev/null) != "true" ]]; then
+    if [[ $($DOCKER_CMD inspect -f '{{.State.Running}}' aegis-ank 2>/dev/null) != "true" ]]; then
         error_exit "aegis-ank is not running"
     fi
     
     # Wait for the server to log that it started
     local elapsed=0
     while [[ $elapsed -lt "$ANK_TIMEOUT" ]]; do
-        if docker logs aegis-ank 2>&1 | grep -qE "Listening|ANK Initialized|Server started"; then
+        if $DOCKER_CMD logs aegis-ank 2>&1 | grep -qE "Listening|ANK Initialized|Server started"; then
             success "ANK Initialized and listening (${elapsed}s)"
             return 0
         fi
@@ -144,27 +166,27 @@ check_bff_health() {
         [[ "$attempt" -lt "$HEALTH_RETRIES" ]] && sleep "$HEALTH_RETRY_DELAY"
     done
     warn "BFF health check failed. Last logs:"
-    docker logs aegis-shell --tail 20 2>&1 || true
+    $DOCKER_CMD logs aegis-shell --tail 20 2>&1 || true
     return 1
 }
 
 reload_shell() {
     log "Copying updated BFF files into container..."
-    docker cp /opt/aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/ || \
+    $DOCKER_CMD cp /opt/aegis/Aegis-Shell/bff/. aegis-shell:/app/bff/ || \
         error_exit "Failed to copy BFF files to container"
     
     if [ -d "/opt/aegis/Aegis-Shell/ui/dist" ]; then
-        docker cp /opt/aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
+        $DOCKER_CMD cp /opt/aegis/Aegis-Shell/ui/dist/. aegis-shell:/app/ui/dist/
     fi
 
     if [ -f "/opt/aegis/Aegis-Shell/bff/VERSION" ]; then
-        docker cp /opt/aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
+        $DOCKER_CMD cp /opt/aegis/Aegis-Shell/bff/VERSION aegis-shell:/app/bff/VERSION
     fi
     
     success "BFF files updated in container"
 
     log "Restarting aegis-shell..."
-    docker restart aegis-shell || error_exit "Failed to restart aegis-shell"
+    $DOCKER_CMD restart aegis-shell || error_exit "Failed to restart aegis-shell"
     success "aegis-shell restarted"
 
     check_bff_health || error_exit "aegis-shell restarted but health check failed"
@@ -174,7 +196,8 @@ reload_ank() {
     log "Building ank-server from source (Ubuntu 22.04 container for glibc compatibility)..."
     log "This will take 1-5 minutes depending on what changed..."
 
-    docker run --rm \
+    # Builder running via wrapper
+    $DOCKER_CMD run --rm \
         -v "${ANK_SRC_DIR}:/workspace" \
         -w /workspace \
         ubuntu:22.04 \
@@ -191,11 +214,11 @@ reload_ank() {
     success "Compilation complete"
 
     log "Copying new binary to ank container..."
-    docker cp "${ANK_SRC_DIR}/target/release/ank-server" aegis-ank:/app/ank-server || \
+    $DOCKER_CMD cp "${ANK_SRC_DIR}/target/release/ank-server" aegis-ank:/app/ank-server || \
         error_exit "Failed to copy binary to container"
 
     log "Restarting aegis-ank..."
-    docker restart aegis-ank || error_exit "Failed to restart aegis-ank"
+    $DOCKER_CMD restart aegis-ank || error_exit "Failed to restart aegis-ank"
     success "aegis-ank restarted with new binary"
 
     check_ank_health || error_exit "aegis-ank started but port $ANK_PORT never became available"

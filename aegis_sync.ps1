@@ -215,7 +215,7 @@ function Invoke-HotReload {
     if ($DoReset) { $remoteCmd += " --reset" }
 
     $sshArgs = @(
-        "-i", $KeyPath,
+        "-t", "-i", $KeyPath,
         "-o", "StrictHostKeyChecking=no",
         "-o", "UserKnownHostsFile=/dev/null",
         "-q",
