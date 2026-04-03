@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- **[INST-29-001] Setup Token Display**:
+    - The installer now waits for the Aegis Neural Kernel (ANK) to initialize.
+    - Automatically extracts the one-time `setup_token` from ANK logs.
+    - Displays a clickable URL with the token for zero-friction first-time administrative setup.
+    - Added fallback instructions to use `sudo aegis-token` if the token cannot be retrieved automatically.
+
 ## [1.5.0] - 2026-03-25
 ### Added
 - **[INST-121] Aegis DevSync — Server-Side Hot-Reload Script (Epic 24)**:
@@ -29,8 +38,6 @@
     - Added `profiles: ["cpu"]` to the standard `ank-server` service in `docker-compose.yml`.
     - Updated `install_aegis.sh` to explicitly activate the `cpu` profile when GPU hardware is not selected (`HW_PROFILE != 3`).
     - Ensured mutual exclusivity between CPU and GPU containers, preventing "container name already in use" errors during deployment.
-
-## [Unreleased]
 
 ### Security
 - **[INST-SEC-125] Implicit mTLS mode for Bootstrap**:
@@ -68,7 +75,6 @@
 ### Fixed
 - Declare SERVER_IP as global variable to prevent unbound error in print_success() [INST-29-003]
 - **[INST-116] Capture ANK install token and inject into BFF**:
-
     - Implementada captura automatizada del `INSTALL TOKEN` generado por el Kernel al inicio (extrayéndolo de los logs del contenedor `ank-server`).
     - Inyectado dinámicamente el token en el archivo `.env` bajo la variable `AEGIS_INSTALL_TOKEN`.
     - Agregado reinicio automático del contenedor `aegis-shell` en la fase de orquestación para asegurar que el BFF cargue el token inmediatamente.
@@ -90,36 +96,6 @@
     - Updated `aegis.service` to `ProtectSystem=full` and added Docker socket to `ReadWritePaths`.
     - Removed `sudo -u` wrappers in `orchestrate()` and `setup_workspace()` when already running as unprivileged user via systemd.
     - Used `:?` operator in `docker-compose.yml` to remove `AEGIS_ROOT_KEY` fallback, ensuring a visible error if unset.
-
-### Added
-- **[GOV-108] Smoke Test Suite — Full Stack E2E Verification**:
-    - Created `smoke_test.sh` for post-installation validation.
-    - Implemented 7 non-destructive checks: Docker status, ANK/Shell container state, gRPC port (50051) connectivity, BFF API health, UI accessibility, and environment variable integrity.
-    - Added comprehensive "Smoke Test" section to `README.md` with usage instructions and check details.
-    - Verified with `shellcheck` (0 warnings) and `bash -n` compliance.
-
-- **[ANK-INST-003] Redesign: Zero-friction onboarding — State-based setup:**
-    - Removed `install_token` display logic from the `print_success` screen.
-    - Simplified the bootstrapper by eliminating the need to capture or inject installation tokens.
-    - Fully decoupled the Installer from the Kernel's internal initialization state.
-- **[INST-113] UX Progress Feedback in TUI Mode**:
-    - Reemplazados diálogos silenciosos bloqueantes y agregadas barras de estado (`infobox`) detalladas en las fases críticas (Dependencies, Workspace, Orchestration).
-    - Mejorada interactividad y visibilidad en tiempo real para procesos lentos (`apt-get`, `git clone`, `docker pull`).
-    - Eliminado el bloqueo interactivo (`msgbox`) tras la fase de clonación de repositorio, asegurando un progreso ininterrumpido.
-- **[INST-112] Smart Profiles Bootstrapper (OOM-Safe)**:
-    - Añadidas etiquetas `image` en `docker-compose.yml` apuntando a `ghcr.io/gustavo324234/aegis-ank:latest` y `aegis-shell:latest`.
-    - Refactorizado el menú de `install_aegis.sh` para incluir 3 perfiles de orquestación (Cloud/Edge, Local Monolith, Hybrid GPU).
-    - Implementado Pre-flight RAM Check: Advertencia interactiva OOMKill (`dialog --yesno`) si RAM < 2000MB y se elige compilación local.
-    - Añadida lógica dinámica a `orchestrate()` para elegir entre `pull` o `build` dependiendo del perfil.
-
-### Security
-- **[INST-STB-019] Unprivileged Service Account & Systemd Hardening**:
-    - Added `create_aegis_user()` phase (phase 6): creates a dedicated `aegis` system user (`--system --no-create-home --shell /sbin/nologin`) idempotently via `id -u` check before calling `useradd`.
-    - Added `install_systemd_service()` phase (phase 7): writes `/etc/systemd/system/aegis.service` with `User=aegis`, `NoNewPrivileges=true`, `ProtectSystem=strict`, `ProtectHome=true`, and `ReadWritePaths=/opt/aegis /tmp`; gracefully degrades if systemd is not running.
-    - Fixed `set -eo pipefail` → `set -euo pipefail` to enforce strict unbound-variable detection (SRE Law 2).
-    - Initialized `SELECTED_FEATURES` and `SELECTED_UI` at global scope to satisfy `set -u` in scripted/headless mode.
-    - Resolved ShellCheck SC2155 violations (declare-then-assign) in `check_system_requirements` and `security_guard`.
-    - Removed unused variables `FORCE_ROOT_ORCHESTRATION` and `MAGENTA` (SC2034).
 
 ## [1.4.3] - 2026-03-15
 ### Fixed
