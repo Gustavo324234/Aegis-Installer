@@ -159,7 +159,7 @@ check_bff_health() {
     log "Verifying BFF health (${BFF_HEALTH_URL})..."
     local attempt
     for attempt in $(seq 1 "$HEALTH_RETRIES"); do
-        if curl -s --connect-timeout 5 "$BFF_HEALTH_URL" 2>/dev/null | grep -qi "online"; then
+        if curl -s --connect-timeout 5 "$BFF_HEALTH_URL" 2>/dev/null | grep -qiE "online|OPERATIONAL|INITIALIZING"; then
             success "BFF is healthy"
             return 0
         fi

@@ -24,3 +24,6 @@ root_key.txt
 
 # Tickets — internal, stored in Aegis-Governance (private repo)
 Tickets/
+
+# Development Overrides - Local Only
+docker-compose.override.yml
