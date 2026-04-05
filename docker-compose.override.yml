@@ -1,0 +1,8 @@
+# Aegis Dev-Override v1.0
+# Solo para desarrollo local (ignorado por git)
+
+services:
+  aegis-shell:
+    volumes:
+      - ../Aegis-Shell/bff:/app/bff
+      - ../Aegis-Shell/ui/dist:/app/ui/dist

@@ -13,6 +13,16 @@
     - Enables users to trigger manual token regeneration via SSH/CLI if the initial token expires.
     - Automatically checks system status via the BFF API to prevent unauthorized token exposure on already-configured systems.
     - Integrated into the deployment process for automatic installation in `/usr/local/bin/aegis-token`.
+- **[INST-31-001] Native Installation Mode**:
+    - Added the option to install Aegis OS as a native system daemon, bypassing Docker.
+    - Automatic OS detection for Linux, Windows (WSL), and macOS.
+    - Implemented `install_native()` flow: downloads pre-compiled binaries and setups local Python environments.
+    - Native mode recommended for edge devices and faster startup.
+- **[INST-31-002] Unified `aegis` CLI**:
+    - Created a unified `aegis` command-line tool to manage the system regardless of installation mode.
+    - Commands: `start`, `stop`, `restart`, `status`, `logs`, `dev`, `token`, `update`.
+    - Automatically detects the installation mode from `/etc/aegis/mode`.
+    - Integrated `aegis-update` for seamless binary updates in native mode.
 
 ## [1.5.0] - 2026-03-25
 ### Added

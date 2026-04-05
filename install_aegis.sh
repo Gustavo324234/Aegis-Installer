@@ -22,6 +22,8 @@ REPOS=("Aegis-ANK" "Aegis-Shell" "Aegis-Installer")
 USE_TUI=true
 HW_PROFILE="1"
 UI_PROFILE="1"
+INSTALL_MODE="1"
+OS="linux"
 SELECTED_FEATURES=""
 SELECTED_UI="web"
 INVOKING_USER=${SUDO_USER:-$(whoami)}
@@ -54,8 +56,19 @@ print_banner() {
   \_| |_\____/ \____/\___/\____/   \___/\____/
 EOF
     echo -e "${NC}"
-    echo -e "      Aegis OS Professional Bootstrapper - v1.4.7"
+    echo -e "      Aegis OS Professional Bootstrapper - v1.5.0"
     echo -e "------------------------------------------------------------"
+}
+
+# --- OS Detection ---
+detect_os() {
+    case "$(uname -s)" in
+        Linux*)  OS="linux" ;;
+        Darwin*) OS="macos" ;;
+        MINGW*|CYGWIN*|MSYS*) OS="windows" ;;
+        *) OS="unknown" ;;
+    esac
+    log "Operating System detected: $OS"
 }
 
 # --- Helper Functions ---
@@ -212,45 +225,70 @@ check_system_requirements() {
 
 # 2. Self-Healing Dependencies
 install_dependencies() {
-    log "Synchronizing base dependencies..."
+    if [ "$INSTALL_MODE" = "2" ]; then
+        log "Synchronizing Docker dependencies..."
+        apt-get update -qq >> "$LOG_FILE" 2>&1
+        local basic_deps=("git" "curl" "dialog" "openssl")
+        for dep in "${basic_deps[@]}"; do
+            if ! command -v "$dep" &> /dev/null; then
+                log "Installing $dep..."
+                apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
+            fi
+        done
 
-    apt-get update -qq >> "$LOG_FILE" 2>&1
-    local basic_deps=("git" "curl" "dialog" "openssl")
-    for dep in "${basic_deps[@]}"; do
-        if ! command -v "$dep" &> /dev/null; then
-            log "Installing $dep..."
-            apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
-        fi
-    done
-
-    if ! command -v docker &> /dev/null; then
-        log "Installing Docker Engine (this may take 2-3 minutes)..."
-        curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
-        systemctl enable --now docker >> "$LOG_FILE" 2>&1
-    else
-        # Asegurar que Docker esté habilitado para arrancar con el sistema
-        systemctl enable docker >> "$LOG_FILE" 2>&1 || true
-    fi
-
-    if ! docker compose version &> /dev/null; then
-        log "Installing Docker Compose plugin..."
-        
-        # Try apt package first
-        if apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1; then
-            success "Docker Compose plugin installed via apt"
+        if ! command -v docker &> /dev/null; then
+            log "Installing Docker Engine (this may take 2-3 minutes)..."
+            curl -fsSL https://get.docker.com | sh >> "$LOG_FILE" 2>&1 || error "Failed to install Docker"
+            systemctl enable --now docker >> "$LOG_FILE" 2>&1
         else
-            # INST-SEC-124: Fallback to standalone with checksum verification
-            warn "Apt plugin failed, downloading standalone Docker Compose with verification..."
-            download_with_verification "$DOCKER_COMPOSE_URL" "/usr/local/bin/docker-compose" "$DOCKER_COMPOSE_SHA256"
-            chmod +x /usr/local/bin/docker-compose
-            success "Docker Compose standalone installed"
+            systemctl enable docker >> "$LOG_FILE" 2>&1 || true
         fi
-    fi
 
+        if ! docker compose version &> /dev/null; then
+            log "Installing Docker Compose plugin..."
+            if apt-get install -y docker-compose-plugin -qq >> "$LOG_FILE" 2>&1; then
+                success "Docker Compose plugin installed via apt"
+            else
+                download_with_verification "$DOCKER_COMPOSE_URL" "/usr/local/bin/docker-compose" "$DOCKER_COMPOSE_SHA256"
+                chmod +x /usr/local/bin/docker-compose
+                success "Docker Compose standalone installed"
+            fi
+        fi
+    else
+        log "Synchronizing Native dependencies..."
+        apt-get update -qq >> "$LOG_FILE" 2>&1
+        local native_deps=("git" "curl" "dialog" "openssl" "python3" "python3-pip" "python3-venv")
+        for dep in "${native_deps[@]}"; do
+            if ! command -v "$dep" &> /dev/null && [ "$OS" = "linux" ]; then
+                log "Installing $dep..."
+                apt-get install -y "$dep" -qq >> "$LOG_FILE" 2>&1 || error "Failed to install $dep"
+            fi
+        done
+    fi
     success "All dependencies ready."
 }
 
-# 3. Interactive Profile Selection
+# 3. Installation Mode Selection
+select_install_mode() {
+    if [ "$USE_TUI" = false ]; then
+        log "Scripted Mode: Defaulting to Native installation."
+        INSTALL_MODE="1"
+        return
+    fi
+
+    set +e
+    INSTALL_MODE=$(dialog --clear --backtitle "Aegis OS Installation" \
+        --title "AEGIS OS — INSTALLATION MODE" \
+        --menu "Select your preferred installation method:" 15 60 2 \
+        "1" "Native (recommended) - Runs as system daemon" \
+        "2" "Docker - Isolated containers" \
+        3>&1 1>&2 2>&3)
+    set -e
+    clear
+    INSTALL_MODE="${INSTALL_MODE:-1}"
+}
+
+# 4. Interactive Profile Selection
 configure_profiles() {
     if [ "$USE_TUI" = false ]; then
         log "Scripted Mode: Using default profiles (Cloud/Edge + Web UI)."
@@ -384,20 +422,21 @@ create_aegis_user() {
 install_systemd_service() {
     log "Installing aegis.service systemd unit (auto-start on boot)..."
 
-    # Determinar los profiles de compose según configuración
-    local compose_profiles="--profile cpu"
-    if [ "$SELECTED_UI" = "web" ]; then
-        compose_profiles="--profile cpu --profile frontend"
-    fi
-    if [ "$HW_PROFILE" = "3" ]; then
-        compose_profiles="--profile gpu --profile frontend"
-    fi
-
     local unit_file="/etc/systemd/system/aegis.service"
 
-    cat > "$unit_file" <<UNIT
+    if [ "$INSTALL_MODE" = "2" ]; then
+        # Docker Mode
+        local compose_profiles="--profile cpu"
+        if [ "$SELECTED_UI" = "web" ]; then
+            compose_profiles="--profile cpu --profile frontend"
+        fi
+        if [ "$HW_PROFILE" = "3" ]; then
+            compose_profiles="--profile gpu --profile frontend"
+        fi
+
+        cat > "$unit_file" <<UNIT
 [Unit]
-Description=Aegis OS — Neural Kernel + Shell
+Description=Aegis OS — Neural Kernel + Shell (Docker)
 Documentation=https://github.com/Gustavo324234/Aegis-Installer
 After=network-online.target docker.service
 Wants=network-online.target
@@ -418,6 +457,32 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 UNIT
+    else
+        # Native Mode
+        cat > "$unit_file" <<UNIT
+[Unit]
+Description=Aegis OS — Neural Kernel + Shell (Native)
+Documentation=https://github.com/Gustavo324234/Aegis-Installer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=$INSTALL_ROOT
+EnvironmentFile=$INSTALL_ROOT/Aegis-Installer/.env
+ExecStart=$INSTALL_ROOT/bin/aegis-supervisor
+ExecReload=/bin/kill -HUP \$MAINPID
+StandardOutput=journal
+StandardError=journal
+Restart=always
+RestartSec=5
+User=aegis
+Group=aegis
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    fi
 
     chmod 644 "$unit_file"
 
@@ -432,11 +497,51 @@ UNIT
     log "Installing aegis-token helper..."
     cp "$INSTALL_ROOT/Aegis-Installer/aegis_token.sh" /usr/local/bin/aegis-token
     chmod +x /usr/local/bin/aegis-token
-    success "aegis-token installed. Run 'sudo aegis-token' to regenerate setup token."
+    
+    # Install aegis-update helper
+    log "Installing aegis-update helper..."
+    cp "$INSTALL_ROOT/Aegis-Installer/aegis_update.sh" /usr/local/bin/aegis-update
+    chmod +x /usr/local/bin/aegis-update
+    
+    # Store mode for CLI
+    mkdir -p /etc/aegis
+    if [ "$INSTALL_MODE" = "2" ]; then
+        echo "docker" > /etc/aegis/mode
+    else
+        echo "native" > /etc/aegis/mode
+    fi
+
+    # Install unified aegis CLI
+    log "Installing unified 'aegis' CLI..."
+    cp "$INSTALL_ROOT/Aegis-Installer/aegis_cli.sh" /usr/local/bin/aegis
+    chmod +x /usr/local/bin/aegis
+
+    success "Aegis helpers and CLI installed."
 }
 
-# 8. Orchestration
-orchestrate() {
+# 8. Native Installation Flow
+install_native() {
+    log "Starting Native installation flow..."
+    
+    # 1. Setup directories
+    mkdir -p "$INSTALL_ROOT/bin" "$INSTALL_ROOT/ui" "$INSTALL_ROOT/bff"
+    
+    # 2. Download binaries (Stub for now, will implement actual downloads in next ticket/step)
+    log "Downloading Aegis binaries for $OS..."
+    # TODO: Implement actual download logic using download_with_verification
+    
+    # 3. Setup Python BFF
+    log "Configuring Python BFF..."
+    if [ "$OS" = "linux" ]; then
+        python3 -m venv "$INSTALL_ROOT/bff/venv" >> "$LOG_FILE" 2>&1
+        "$INSTALL_ROOT/bff/venv/bin/pip" install -r "$INSTALL_ROOT/Aegis-Shell/bff/requirements.txt" >> "$LOG_FILE" 2>&1
+    fi
+    
+    success "Native binaries and environments prepared."
+}
+
+# 9. Docker Orchestration
+install_docker() {
     log "Initializing Docker Orchestrator..."
     cd "$INSTALL_ROOT/Aegis-Installer" >> "$LOG_FILE" 2>&1
 
@@ -535,12 +640,20 @@ print_success() {
 # --- MAIN EXECUTION ---
 clear
 print_banner
+detect_os
 check_system_requirements
+select_install_mode
 install_dependencies
 configure_profiles
 setup_workspace
 security_guard
 create_aegis_user
-install_systemd_service
-orchestrate
+
+if [ "$INSTALL_MODE" = "1" ]; then
+    install_native
+else
+    install_systemd_service
+    install_docker
+fi
+
 print_success
