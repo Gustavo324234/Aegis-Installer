@@ -24,12 +24,13 @@ check_version() {
 
 update_binaries() {
     log "Updating Aegis binaries..."
+    log "Target: $INSTALL_ROOT | ANK: $ANK_BINARY_URL | BFF: $BFF_URL | UI: $UI_URL"
     
     # Stop services if running
     systemctl stop aegis 2>/dev/null || true
     
     # Download and replace
-    # curl -L $ANK_BINARY_URL -o "$INSTALL_ROOT/bin/ank-server"
+    # curl -L "$ANK_BINARY_URL" -o "$INSTALL_ROOT/bin/ank-server"
     # ...
     
     # Restart services
