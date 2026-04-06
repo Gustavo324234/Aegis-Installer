@@ -7,7 +7,98 @@
 
 Aegis OS is an **open source cognitive operating system**. It runs LLMs — local or cloud — as deterministic execution units under strict SRE policies, with cryptographic multi-tenant isolation and a gRPC-first architecture.
 
-This repository is the **installer and orchestrator**. It deploys the full Aegis stack (kernel + shell) via Docker Compose with a single command.
+This repository is the **installer and orchestrator**. It deploys the full Aegis stack (kernel + shell) using two modes: **Native Binary** (using `aegis-supervisor`) or **Docker Containers**.
+
+---
+
+## 🚀 Deployment Modes
+
+### 1. 🖥️ Native Mode (Recommended for Desktop)
+Aegis runs directly on your OS as a background service managed by **aegis-supervisor**. This mode is ideal for local development and general desktop use on Windows and macOS, as it doesn't require virtualization or WSL2.
+
+### 2. 🐋 Docker Mode (Recommended for Servers)
+Aegis runs inside lightweight containers. This mode is the standard for Linux servers and production environments, ensuring total isolation and reproducible deployments via Docker Compose.
+
+---
+
+## ⚡ Quickstart
+
+### Linux (Nativo o Docker)
+```bash
+sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh)"
+```
+*The installer will ask you to choose between Native and Docker.*
+
+### Windows (Nativo)
+1. Download the latest `aegis-installer.exe` (or run via PowerShell as Administrator):
+```powershell
+Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.ps1'))
+```
+*Native mode on Windows registers Aegis as an official Windows Service.*
+
+### macOS (Nativo - Intel & Apple Silicon)
+```bash
+bash -c "$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh)"
+```
+*Registers Aegis as a `LaunchAgent` using `launchd`.*
+
+---
+
+## 🛠️ The `aegis` CLI
+
+Once installed, you can manage the entire OS with the unified `aegis` command:
+
+| Command | Action |
+|---|---|
+| `aegis start` | Starts all services (Kernel + Shell) |
+| `aegis stop` | Stops all services safely (Zero-Panic flush) |
+| `aegis status` | Shows CPU/VRAM usage and service health |
+| `aegis logs` | Tails both kernel and frontend logs |
+| `aegis dev` | Starts in development mode with Hot-Reload |
+| `aegis token` | Generates a new setup token if needed |
+| `aegis update` | Pulls the latest version from GitHub |
+
+---
+
+## 📋 What the installer does (Phase Breakdown)
+
+`install_aegis.sh` runs in 10 sequential phases:
+
+```
+Phase 1  check_system_requirements()
+         Verifies CPU cores, RAM (warns if < 2GB), GPU (nvidia-smi)
+
+Phase 2  select_deployment_mode()  [TUI mode only]
+         Target: Native vs Docker vs Cloud-Hybrid
+
+Phase 3  install_dependencies()
+         Nativo: Rust toolchain, Python 3.10+, git
+         Docker: Docker Engine (if missing)
+
+Phase 4  setup_workspace()
+         git clone/pull: Aegis-ANK, Aegis-Shell into /opt/aegis/
+
+Phase 5  build_orchestrator()
+         Compiles aegis-supervisor (Rust) for the host architecture
+
+Phase 6  security_guard()
+         Generates AEGIS_ROOT_KEY (openssl rand -hex 32)
+         Writes .env with chmod 600
+
+Phase 7  register_as_service()
+         Linux: systemd unit installation
+         Windows: registers Windows Service / Task Scheduler
+         macOS: generates launchd plist
+
+Phase 8  orchestrate()
+         Nativo: starts aegis-supervisor
+         Docker: docker compose up -d
+
+Phase 9  print_success()
+         Displays Shell URL (http://localhost:8000)
+```
+
+All phases are logged to `/tmp/aegis_install.log`.
 
 ---
 
@@ -40,133 +131,6 @@ This repository is the **installer and orchestrator**. It deploys the full Aegis
 
 ---
 
-## 1. Quickstart — Linux
-
-Tested on Debian 11+, Ubuntu 20.04+. Requires `sudo`.
-
-## 🚀 Quick Start (Production)
-
-For a clean installation on Ubuntu/Debian, run the following command as root:
-
-```bash
-sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh)"
-```
-
-### 🧹 Clean Slate (Full Wipe)
-
-To completely uninstall Aegis (including SQLCipher databases, containers, and system folders) before a fresh reinstall:
-
-```bash
-sudo bash -c "$(curl -sSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/uninstall_aegis.sh)"
-```
-
-The script installs all dependencies (Docker, Docker Compose, git), clones the repos, generates secrets, and starts the stack. In TUI mode, it will ask:
-
-1. **Hardware profile** — Cloud/Edge (pull images from GHCR) or Local (build from source)
-2. **UI profile** — Full stack (kernel + shell) or Headless (kernel only)
-
-When it finishes:
-
-```
-✅ Aegis OS deployed successfully
-   Shell: http://<your-ip>:8000
-```
-
-Open the URL in your browser and follow the Engine Setup Wizard to configure your LLM.
-
-### Headless / CI mode
-
-If you are running in a non-interactive environment (SSH without TTY, CI pipeline):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh -o /tmp/aegis_install.sh && sudo bash /tmp/aegis_install.sh --no-tui
-```
-
-This skips the menus and uses defaults: Cloud/Edge profile + Web UI.
-
----
-
-## 2. Quickstart — Windows (WSL2)
-
-> **Important:** Always clone and run Aegis inside the Linux filesystem (`~/`), not inside `/mnt/c/`. Docker volume mounts do not work correctly on the Windows filesystem from WSL2.
-
-### Step 1 — Install WSL2
-
-Open PowerShell as Administrator and run:
-
-```powershell
-wsl --install
-```
-
-Restart your machine. This installs WSL2 with Ubuntu by default.
-
-### Step 2 — Install Docker Desktop
-
-Download and install [Docker Desktop for Windows](https://www.docker.com/products/docker-desktop/). During setup, enable **"Use WSL2 based engine"**. After installation, go to `Settings → Resources → WSL Integration` and enable integration for your Ubuntu distro.
-
-### Step 3 — Run the installer inside WSL2
-
-Open your Ubuntu terminal (not PowerShell) and run:
-
-```bash
-cd ~
-curl -fsSL https://raw.githubusercontent.com/Gustavo324234/Aegis-Installer/main/install_aegis.sh -o /tmp/aegis_install.sh && sudo bash /tmp/aegis_install.sh
-```
-
-Then open `http://localhost:8000` in your Windows browser.
-
-### Common WSL2 pitfalls
-
-| Problem | Cause | Fix |
-|---|---|---|
-| `permission denied` on Docker | User not in docker group | Run `sudo usermod -aG docker $USER` then restart WSL |
-| Volumes not mounting | Cloned inside `/mnt/c/` | Re-clone under `~/` |
-| Port not accessible in browser | Docker Desktop WSL integration off | Enable in Docker Desktop settings |
-
----
-
-## 3. What the installer does
-
-`install_aegis.sh` runs in 9 sequential phases:
-
-```
-Phase 1  check_system_requirements()
-         Verifies CPU cores, RAM (warns if < 2GB), Docker, NVIDIA GPU
-
-Phase 2  install_dependencies()
-         apt-get: git, curl, dialog, openssl
-         Docker Engine (auto-installs if missing)
-
-Phase 3  configure_profiles()  [TUI mode only]
-         Select hardware profile: Cloud/Edge vs Local Monolith vs Hybrid GPU
-         Select UI profile: full stack vs headless kernel only
-
-Phase 4  setup_workspace()
-         git clone/pull: Aegis-ANK, Aegis-Shell into /opt/aegis/
-
-Phase 5  security_guard()
-         Generates AEGIS_ROOT_KEY via openssl rand -hex 32
-         Writes .env with chmod 600
-
-Phase 6  create_aegis_user()
-         Creates unprivileged system user 'aegis' (/sbin/nologin)
-         Adds aegis to docker group
-
-Phase 7  install_systemd_service()
-         Installs hardened aegis.service unit
-         NoNewPrivileges, ProtectSystem=full, ProtectHome
-
-Phase 8  orchestrate()
-         Pre-creates volume directories (users/, models/)
-         docker compose --profile frontend up -d
-
-Phase 9  print_success()
-         Displays public IP and Shell URL
-```
-
-All phases are logged to `/tmp/aegis_install.log`.
-
----
 
 ## 4. Configuration
 

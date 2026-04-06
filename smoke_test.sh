@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Aegis OS - Smoke Test Suite
-# Validates the full stack after installation
+# Validates the full stack after installation (Native or Docker)
 
 set -euo pipefail
 
 # --- Configuration ---
-# Look for .env in the current directory or a specific path
-DOTENV_PATH="${AEGIS_ROOT:-$(pwd)}/.env"
+AEGIS_ROOT="${AEGIS_ROOT:-$(pwd)}"
+DOTENV_PATH="$AEGIS_ROOT/.env"
 PASSED=0
 FAILED=0
 TOTAL=7
@@ -22,47 +22,75 @@ log_fail() {
     FAILED=$((FAILED + 1))
 }
 
-# --- Smoke Test Execution ---
+# Detect Mode
+MODE="docker"
+if [[ -f "$DOTENV_PATH" ]]; then
+    if grep -q "AEGIS_INSTALL_MODE=native" "$DOTENV_PATH"; then
+        MODE="native"
+    fi
+fi
 
 echo "=== Aegis Smoke Test Suite ==="
+echo "Mode: $MODE"
 echo "Checking system readiness..."
 echo ""
 
-# 1. Docker daemon active
-if docker info >/dev/null 2>&1; then
-    log_pass "Docker daemon is active"
+# 1. Logic provider check (Docker vs Supervisor)
+if [[ "$MODE" == "docker" ]]; then
+    if docker info >/dev/null 2>&1; then
+        log_pass "Docker daemon is active"
+    else
+        log_fail "Docker daemon is not responding"
+        exit 1
+    fi
 else
-    log_fail "Docker daemon is not responding"
-    # Exit 1 immediately if Docker is not working
-    echo ""
-    echo "=== Aegis Smoke Test Results ==="
-    echo "Passed: $PASSED/$TOTAL"
-    echo "Failed: $FAILED/$TOTAL"
-    exit 1
+    if command -v aegis >/dev/null 2>&1; then
+        log_pass "Aegis CLI is installed"
+    else
+        log_fail "Aegis CLI not found in PATH"
+        exit 1
+    fi
 fi
 
-# 2. Container ANK running
-if [[ -n $(docker ps --filter "name=aegis-ank" --filter "status=running" -q) ]]; then
-    log_pass "Container 'aegis-ank' is running"
+# 2. Kernel Process/Container Check
+if [[ "$MODE" == "docker" ]]; then
+    if [[ -n $(docker ps --filter "name=aegis-ank" --filter "status=running" -q) ]]; then
+        log_pass "Container 'aegis-ank' is running"
+    else
+        log_fail "Container 'aegis-ank' is NOT running"
+    fi
 else
-    log_fail "Container 'aegis-ank' is NOT running"
+    # En modo nativo buscamos el proceso o el estado via CLI
+    if aegis status 2>/dev/null | grep -qi "Kernel.*UP"; then
+        log_pass "ANK Keyboard is UP (Native)"
+    else
+        log_fail "ANK Keyboard is NOT reporting UP status"
+    fi
 fi
 
-# 3. Container Shell running
-if [[ -n $(docker ps --filter "name=aegis-shell" --filter "status=running" -q) ]]; then
-    log_pass "Container 'aegis-shell' is running"
+# 3. Shell Process/Container Check
+if [[ "$MODE" == "docker" ]]; then
+    if [[ -n $(docker ps --filter "name=aegis-shell" --filter "status=running" -q) ]]; then
+        log_pass "Container 'aegis-shell' is running"
+    else
+        log_fail "Container 'aegis-shell' is NOT running"
+    fi
 else
-    log_fail "Container 'aegis-shell' is NOT running"
+    if aegis status 2>/dev/null | grep -qi "Shell.*UP"; then
+        log_pass "Shell BFF is UP (Native)"
+    else
+        log_fail "Shell BFF is NOT reporting UP status"
+    fi
 fi
 
 # 4. ANK health — port 50051 accessible
-if nc -zv localhost 50051 >/dev/null 2>&1; then
+if nc -zv localhost 50051 >/dev/null 2>&1 || timeout 1 bash -c "</dev/tcp/localhost/50051" >/dev/null 2>&1; then
     log_pass "ANK gRPC port (50051) is accessible"
 else
     log_fail "ANK gRPC port (50051) is NOT accessible"
 fi
 
-# 5. Shell BFF health — /api/status (Check if responding JSON with "state")
+# 5. Shell BFF health — /api/status
 if curl -sf --max-time 5 http://localhost:8000/api/status 2>/dev/null | grep -q '"state"'; then
     log_pass "Shell BFF /api/status is responding correctly"
 else
@@ -79,9 +107,9 @@ fi
 # 7. AEGIS_ROOT_KEY set in .env
 if [[ -f "$DOTENV_PATH" ]]; then
     if grep -q "^AEGIS_ROOT_KEY=.\+" "$DOTENV_PATH"; then
-        log_pass "AEGIS_ROOT_KEY is set in $DOTENV_PATH"
+        log_pass "AEGIS_ROOT_KEY is set in .env"
     else
-        log_fail "AEGIS_ROOT_KEY is empty or missing in $DOTENV_PATH"
+        log_fail "AEGIS_ROOT_KEY is empty or missing in .env"
     fi
 else
     log_fail ".env file not found at $DOTENV_PATH"
