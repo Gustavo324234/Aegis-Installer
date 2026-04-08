@@ -39,7 +39,8 @@ param(
     [string]$RemoteBase = "/opt/aegis",
 
     [switch]$DryRun,
-    [switch]$ResetSystem
+    [switch]$ResetSystem,
+    [switch]$BinaryOnly
 )
 
 Set-StrictMode -Version Latest
@@ -202,17 +203,77 @@ function Sync-Repo {
     return $true
 }
 
-# --- Remote Hot-Reload Dispatch ---
-function Invoke-HotReload {
-    param([string]$RepoTarget, [bool]$DoReset)
+# --- Sync ANK Binary Only (For slow servers) ---
+function Sync-AnkBinary {
+    param([hashtable]$RsyncInfo)
 
-    Write-Log "Dispatching hot-reload on server (--repo $($RepoTarget))..."
-    if ($RepoTarget -eq "ank") {
-        Write-Warn "ANK reload includes Rust compilation - this takes 1-5 minutes..."
+    # We assume the user built in WSL for Linux
+    # Target path: C:\Aegis\Aegis-ANK\target\x86_64-unknown-linux-gnu\release\ank-server
+    # Or standard release if built inside WSL native: target/release/ank-server
+    $localBinary = Join-Path $LocalBase "Aegis-ANK\target\release\ank-server"
+    if (-not (Test-Path $localBinary)) {
+        # Fallback to cross-compilation path if exists
+        $localBinary = Join-Path $LocalBase "Aegis-ANK\target\x86_64-unknown-linux-gnu\release\ank-server"
     }
 
+    if (-not (Test-Path $localBinary)) {
+        Write-Err "Kernel binary not found! Did you run 'cargo build --release' in WSL?"
+        return $false
+    }
+
+    Write-Log "Uploading pre-compiled binary: $($localBinary)"
+    $remoteBinary = "/usr/local/bin/ank-server"
+    
+    # Use scp for simple binary replacement (requires sudo on server side if not tavo)
+    # Actually rsync is better for permissions
+    $rsyncSrc     = Convert-ToRsyncPath $localBinary $RsyncInfo.Type
+    $rsyncKeyPath = Convert-KeyPath $KeyPath $RsyncInfo.Type
+    # We upload to a temp path first to avoid text file busy, then move via SSH
+    $rsyncDest    = "${User}@${Server}:/tmp/ank-server"
+
+    $rsyncArgs = @(
+        "-avz", 
+        "-e", "ssh -i $rsyncKeyPath -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -q"
+    )
+    $rsyncArgs += $rsyncSrc
+    $rsyncArgs += $rsyncDest
+
+    if ($RsyncInfo.Type -eq "wsl") {
+        $fullCmd = "rsync " + ($rsyncArgs -join " ")
+        $output  = & wsl bash -c $fullCmd 2>&1
+    } else {
+        $output = & $RsyncInfo.Command @rsyncArgs 2>&1
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "rsync binary failed"
+        return $false
+    }
+
+    # Atomically move to final destination and set permissions
+    Write-Log "Applying binary update on server..."
+    $moveCmd = "sudo mv /tmp/ank-server $remoteBinary && sudo chmod +x $remoteBinary"
+    ssh -i $KeyPath -o StrictHostKeyChecking=no $User@$Server $moveCmd
+
+    return $true
+}
+
+# --- Remote Hot-Reload Dispatch ---
+function Invoke-HotReload {
+    param([string]$RepoTarget, [bool]$DoReset, [bool]$SkipBuild)
+
+    Write-Log "Dispatching hot-reload on server (--repo $($RepoTarget))..."
+    
     $remoteCmd = "$HotReloadCmd --repo $($RepoTarget)"
     if ($DoReset) { $remoteCmd += " --reset" }
+    
+    # If we already uploaded the binary, tell the hot-reload script to skip its internal build
+    if ($SkipBuild -and $RepoTarget -eq "ank") {
+        # Note: aegis_hotreload.sh doesn't currently have --skip-build, 
+        # but we can use --repo installer as a hack or just restart the service.
+        $remoteCmd = "sudo systemctl restart aegis-ank"
+        Write-Log "Direct service restart initiated (binary-only mode)."
+    }
 
     $sshArgs = @(
         "-t", "-i", $KeyPath,
@@ -296,7 +357,11 @@ $anyFailed   = $false
 $syncedRepos = @()
 
 foreach ($r in $targetRepos) {
-    $ok = Sync-Repo -RepoName $r -RsyncInfo $rsyncInfo -IsDryRun $DryRun
+    if ($BinaryOnly -and $r -eq "ank") {
+        $ok = Sync-AnkBinary -RsyncInfo $rsyncInfo
+    } else {
+        $ok = Sync-Repo -RepoName $r -RsyncInfo $rsyncInfo -IsDryRun $DryRun
+    }
     if (-not $ok) { $anyFailed = $true } else { $syncedRepos += $r }
 }
 
@@ -305,8 +370,10 @@ if ($anyFailed -and $syncedRepos.Count -eq 0) { Write-Err "All syncs failed."; e
 # 5. Hot-reload
 if (-not $DryRun -and $syncedRepos.Count -gt 0) {
     Write-Host ""
-    $reloadTarget = if ($Repo -eq "all" -and $syncedRepos.Count -eq 1) { $syncedRepos[0] } else { $Repo }
-    $ok = Invoke-HotReload -RepoTarget $reloadTarget -DoReset $ResetSystem
+    # If the user specified 'all', always reload 'all' on the server to ensure consistency.
+    # Otherwise, use the specific repo requested.
+    $reloadTarget = $Repo
+    $ok = Invoke-HotReload -RepoTarget $reloadTarget -DoReset $ResetSystem -SkipBuild $BinaryOnly
     if (-not $ok) { Write-Warn "Sync OK but hot-reload had errors. Check server logs." }
 }
 
