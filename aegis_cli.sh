@@ -46,7 +46,11 @@ case "$1" in
                 *)       docker logs aegis-ank -f & docker logs aegis-shell -f ;;
             esac
         else
-            journalctl -u aegis -f
+            case "${2:-all}" in
+                --ank)   journalctl -u aegis-ank -f ;;
+                --shell) journalctl -u aegis-shell -f ;;
+                *)       journalctl -u aegis-ank -u aegis-shell -f ;;
+            esac
         fi
         ;;
     dev)
