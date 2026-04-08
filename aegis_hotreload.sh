@@ -208,7 +208,8 @@ reload_ank() {
             apt-get install -y -qq curl build-essential pkg-config libssl-dev protobuf-compiler libsqlcipher-dev 2>/dev/null
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y -q 2>/dev/null
             source \$HOME/.cargo/env
-            cargo build --release -p ank-server 2>&1 | grep -E 'Compiling ank|Finished|error\[' || true
+            # SRE-OPTIMIZE: Limit parallel jobs to -j 1 for low-RAM servers (1-2GB)
+            cargo build --release -p ank-server -j 1 2>&1 | grep -E 'Compiling ank|Finished|error\[' || true
         " || error_exit "Rust compilation failed inside Ubuntu 22.04 container"
 
     success "Compilation complete"
